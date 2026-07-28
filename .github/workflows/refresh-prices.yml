@@ -1,0 +1,25 @@
+name: Refresh market prices
+
+on:
+  schedule:
+    # 15:00 UTC = 17:00 Cairo (EGX closes 14:30 Cairo) - runs after market close
+    - cron: "0 15 * * 0-4" # Sun-Thu, matching EGX trading days
+  workflow_dispatch: {} # lets you trigger it manually from the Actions tab
+
+jobs:
+  refresh:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: "22"
+      - working-directory: webapp
+        run: npm install
+      - working-directory: webapp
+        run: npm run refresh-prices
+        env:
+          SUPABASE_URL: ${{ secrets.SUPABASE_URL }}
+          SUPABASE_SERVICE_ROLE_KEY: ${{ secrets.SUPABASE_SERVICE_ROLE_KEY }}
+          EODHD_API_KEY: ${{ secrets.EODHD_API_KEY }}
+          GOLDAPI_KEY: ${{ secrets.GOLDAPI_KEY }}
