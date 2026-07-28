@@ -378,7 +378,7 @@ function wireEvents() {
     e.preventDefault();
     const f = e.target;
     await store.addTransaction(
-      f.ticker.value.toUpperCase(),
+      f.ticker.value.trim(),
       f.type.value,
       parseFloat(f.amount.value),
       f.date.value
@@ -390,7 +390,7 @@ function wireEvents() {
   document.getElementById("value-form")?.addEventListener("submit", async (e) => {
     e.preventDefault();
     const f = e.target;
-    const ticker = f.ticker.value.toUpperCase();
+    const ticker = f.ticker.value.trim();
     await store.setCurrentValue(
       ticker,
       parseFloat(f.value.value),
@@ -404,7 +404,7 @@ function wireEvents() {
   document.getElementById("target-form")?.addEventListener("submit", async (e) => {
     e.preventDefault();
     const f = e.target;
-    await store.setTarget(f.ticker.value.toUpperCase(), parseFloat(f.pct.value) / 100);
+    await store.setTarget(f.ticker.value.trim(), parseFloat(f.pct.value) / 100);
     f.reset();
     refresh();
   });
@@ -437,7 +437,7 @@ function wireEvents() {
       const parsed = JSON.parse(e.target.json.value);
       const rows = Object.entries(parsed).map(([ticker, summary]) => ({
         user_id: state.user.id,
-        ticker: ticker.toUpperCase(),
+        ticker: ticker.trim(),
         summary: String(summary),
         refreshed_at: new Date().toISOString(),
       }));
@@ -472,7 +472,7 @@ function wireEvents() {
     for (let i = 0; i < entries.length; i++) {
       const include = document.querySelector(`[data-review-include="${i}"]`)?.checked;
       if (!include) continue;
-      const ticker = document.querySelector(`[data-review-ticker="${i}"]`).value.toUpperCase();
+      const ticker = document.querySelector(`[data-review-ticker="${i}"]`).value.trim();
       const value = parseFloat(document.querySelector(`[data-review-value="${i}"]`).value);
       if (ticker && !isNaN(value)) {
         await store.setCurrentValue(ticker, value, today(), state.marketPrices[ticker] || null);
