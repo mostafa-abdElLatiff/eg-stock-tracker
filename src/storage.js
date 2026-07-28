@@ -101,21 +101,59 @@ function buildPositions(transactions, currentValues, targets) {
 
 // ── Writing ──
 
-export async function addTransaction(ticker, type, amount, date) {
+// Recording a transaction also bumps the position's current value by the
+// same amount (buy: +amount, sell: -amount, floored at 0) - treats new
+// money as "invested at face value, no gain yet" until you next confirm
+// the real number. This is the same behavior track.py (the CLI tool) has
+// always had; the webapp was missing it, which is what produced the
+// "buy shows up as a 100% loss" bug.
+//
+// marketPriceForTicker: pass state.marketPrices[ticker] if available, so
+// the new value's baseline price is fresh (today's price), not stale. If
+// omitted, price_at_valuation is cleared rather than left stale - a wrong
+// baseline paired with a freshly-bumped value would make later price-ratio
+// estimates wrong, so "no estimate, just the confirmed number" is safer.
+export async function addTransaction(ticker, type, amount, date, marketPriceForTicker = null) {
   const user = await getUser();
   const txn = { ticker, type, amount, date };
+  const signedAmount = type === "buy" ? amount : -amount;
+  const priceAtValuation = marketPriceForTicker?.price ?? null;
+
   if (user) {
-    const { error } = await supabase.from("transactions").insert({
+    const { error: txnError } = await supabase.from("transactions").insert({
       user_id: user.id,
       ticker,
       type,
       amount,
       txn_date: date,
     });
-    if (error) throw error;
+    if (txnError) throw txnError;
+
+    const { data: existing } = await supabase
+      .from("current_values")
+      .select("value")
+      .eq("user_id", user.id)
+      .eq("ticker", ticker)
+      .maybeSingle();
+    const newValue = Math.max(0, (existing?.value || 0) + signedAmount);
+
+    const { error: valueError } = await supabase.from("current_values").upsert({
+      user_id: user.id,
+      ticker,
+      value: newValue,
+      last_valued: date,
+      price_at_valuation: priceAtValuation,
+    });
+    if (valueError) throw valueError;
   } else {
     const data = readLocal();
     data.transactions.push(txn);
+    const existing = data.currentValues[ticker]?.value || 0;
+    data.currentValues[ticker] = {
+      value: Math.max(0, existing + signedAmount),
+      lastValued: date,
+      priceAtValuation,
+    };
     writeLocal(data);
   }
 }

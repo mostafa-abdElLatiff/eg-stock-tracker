@@ -179,6 +179,7 @@ function renderAddTransactionForm() {
   return `
     <div class="card">
       <h2>Record a purchase or sale</h2>
+      <p class="card-note">Also bumps this position's value by the same amount (buy: +, sell: −) so it doesn't show as a loss until you next confirm the real number — it's a placeholder, not a live price.</p>
       <form class="inline" id="txn-form">
         <div class="field"><label>Ticker</label>
           <input list="ticker-list" name="ticker" required placeholder="e.g. COMI" />
@@ -377,11 +378,13 @@ function wireEvents() {
   document.getElementById("txn-form")?.addEventListener("submit", async (e) => {
     e.preventDefault();
     const f = e.target;
+    const ticker = f.ticker.value.trim();
     await store.addTransaction(
-      f.ticker.value.trim(),
+      ticker,
       f.type.value,
       parseFloat(f.amount.value),
-      f.date.value
+      f.date.value,
+      state.marketPrices[ticker] || null
     );
     f.reset();
     refresh();
