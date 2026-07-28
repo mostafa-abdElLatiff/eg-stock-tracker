@@ -2,8 +2,15 @@ name: Refresh market prices
 
 on:
   schedule:
-    # 15:00 UTC = 17:00 Cairo (EGX closes 14:30 Cairo) - runs after market close
-    - cron: "0 15 * * 0-4" # Sun-Thu, matching EGX trading days
+    # Cairo is UTC+2 year-round (no DST). 3x/day, Sun-Thu (EGX trading days):
+    # covers open / mid-session / just-after-close (EGX closes 14:30 Cairo).
+    # 5 stock tickers x 3 runs = 15 EODHD calls/day, under the 20/day free
+    # cap with headroom for manual workflow_dispatch runs. Going more
+    # frequent than this would exceed the free tier for no real benefit -
+    # see README for why (funds/stocks don't move outside these windows).
+    - cron: "0 8 * * 0-4"  # 10:00 Cairo - market open
+    - cron: "0 11 * * 0-4" # 13:00 Cairo - mid-session
+    - cron: "0 13 * * 0-4" # 15:00 Cairo - just after 14:30 close
   workflow_dispatch: {} # lets you trigger it manually from the Actions tab
 
 jobs:

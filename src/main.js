@@ -1,6 +1,10 @@
 import { supabase, hasSupabaseConfig } from "./supabase.js";
 import * as store from "./storage.js";
 import { summarizePositions, suggestSplit } from "./portfolio.js";
+import { estimateValue, CLOUDS_ANNUAL_RATE } from "./estimate.js";
+
+const REFRESH_SCHEDULE_NOTE =
+  "10:00, 13:00 and 15:00 Cairo time, Sunday–Thursday (EGX trading days). Fund NAVs (BAL/BMM/BRE) only actually change once a day regardless of how often this runs — funds are priced end-of-day, not intraday.";
 
 const app = document.getElementById("app");
 
@@ -43,8 +47,20 @@ async function refresh() {
   render();
 }
 
+function estimatedPositions() {
+  const estimates = {};
+  const effective = {};
+  for (const [ticker, pos] of Object.entries(state.positions)) {
+    const est = estimateValue(ticker, pos, state.marketPrices);
+    estimates[ticker] = est;
+    effective[ticker] = { ...pos, currentValue: est.value };
+  }
+  return { effective, estimates };
+}
+
 function render() {
-  const summary = summarizePositions(state.positions, state.targets);
+  const { effective, estimates } = estimatedPositions();
+  const summary = summarizePositions(effective, state.targets);
 
   app.innerHTML = `
     <div class="wrap">
@@ -52,9 +68,10 @@ function render() {
       ${state.error ? `<p class="error">${state.error}</p>` : ""}
       ${state.loading ? `<p class="muted">Loading…</p>` : ""}
       ${renderStats(summary)}
-      ${renderPositionsTable(summary)}
+      ${renderPositionsTable(summary, estimates)}
       ${renderAddTransactionForm()}
       ${renderUpdateValueForm()}
+      ${renderScreenshotUpload()}
       ${renderSplitTool()}
       ${renderTargetsEditor()}
       ${renderMarketPrices()}
@@ -108,19 +125,30 @@ function renderStats(summary) {
   `;
 }
 
-function renderPositionsTable(summary) {
+function estimateLabel(ticker, est) {
+  if (est.kind === "price-ratio") {
+    const noteExtra =
+      ticker === "Gold"
+        ? " — global spot converted to EGP; Thndr's local Egyptian gold price can differ from this"
+        : "";
+    return `<div class="muted">estimated from ${est.source} price change${noteExtra}</div>`;
+  }
+  if (est.kind === "accrual") {
+    return `<div class="muted">estimated: ${est.days}d compounding at ~${(CLOUDS_ANNUAL_RATE * 100).toFixed(1)}%/yr — not a market price, Clouds is interest-accruing cash, not a traded instrument</div>`;
+  }
+  return `<div class="muted">as of your last confirmed value${state.positions[ticker]?.lastValued ? ` (${state.positions[ticker].lastValued})` : ""}</div>`;
+}
+
+function renderPositionsTable(summary, estimates) {
   if (!summary.rows.length) {
     return `<div class="card"><h2>Positions</h2><p class="card-note">No positions yet — add a purchase below to get started.</p></div>`;
   }
   const rows = summary.rows
     .map((r) => {
-      const priceRow = state.marketPrices[r.ticker];
-      const priceNote = priceRow
-        ? `<div class="muted">${priceRow.is_estimate ? "~" : ""}${priceRow.price} ${priceRow.currency} · ${priceRow.source}</div>`
-        : "";
+      const est = estimates[r.ticker] || { kind: "confirmed" };
       return `
         <tr>
-          <td class="tick">${r.ticker}${priceNote}</td>
+          <td class="tick">${r.ticker}${estimateLabel(r.ticker, est)}</td>
           <td class="num">${Math.round(r.invested).toLocaleString()}</td>
           <td class="num">${Math.round(r.value).toLocaleString()}</td>
           <td class="num ${r.gain >= 0 ? "pos" : "neg"}">${r.gain >= 0 ? "+" : ""}${Math.round(r.gain).toLocaleString()}</td>
@@ -133,6 +161,7 @@ function renderPositionsTable(summary) {
   return `
     <div class="card">
       <h2>Positions</h2>
+      <p class="card-note">"Value" below is an estimate where possible (see the note under each ticker), refreshed on this schedule: ${REFRESH_SCHEDULE_NOTE}</p>
       <table>
         <thead><tr><th>Ticker</th><th class="num">Invested</th><th class="num">Value</th><th class="num">Gain</th><th class="num">Gain %</th><th class="num">Mix %</th><th class="num">Target %</th></tr></thead>
         <tbody>${rows}</tbody>
@@ -170,7 +199,7 @@ function renderUpdateValueForm() {
   return `
     <div class="card">
       <h2>Update current value</h2>
-      <p class="card-note">Do this before checking gains — type in what the position is worth right now (from Thndr, or the auto-refreshed price below)</p>
+      <p class="card-note">The source of truth — type in what Thndr actually shows. This also resets the baseline the live estimate (shown in the Positions table) scales from, so confirming periodically keeps the estimate accurate.</p>
       <form class="inline" id="value-form">
         <div class="field"><label>Ticker</label>
           <input list="ticker-list" name="ticker" required />
@@ -179,6 +208,45 @@ function renderUpdateValueForm() {
         <div class="field"><label>Date</label><input type="date" name="date" value="${today()}" /></div>
         <button type="submit">Save</button>
       </form>
+    </div>
+  `;
+}
+
+let screenshotReview = null; // { ticker: value } pending confirmation, or null
+
+function renderScreenshotUpload() {
+  const reviewRows = screenshotReview
+    ? Object.entries(screenshotReview)
+        .map(
+          ([ticker, value], i) => `
+        <div class="field" style="flex-direction:row; align-items:center; gap:6px;">
+          <input type="checkbox" checked data-review-include="${i}" />
+          <input value="${ticker}" data-review-ticker="${i}" style="width:80px" />
+          <input type="number" step="0.01" value="${value}" data-review-value="${i}" style="width:110px" />
+        </div>`
+        )
+        .join("")
+    : "";
+  return `
+    <div class="card">
+      <h2>Update values from a screenshot</h2>
+      <p class="card-note">Free, no paid API involved: share the screenshot with Claude in a chat ("here's my Thndr dashboard, update my values") — Claude reads it and gives you back JSON like <code>{"COMI": 5300, "BAL": 16101.61}</code>. Paste that below. You review and edit before anything is saved; nothing writes automatically.</p>
+      <form id="screenshot-paste-form">
+        <textarea name="json" rows="4" placeholder='{"COMI": 5300, "BAL": 16101.61}' style="width:100%; background:var(--page); border:1px solid var(--border); color:var(--text-primary); border-radius:6px; padding:8px; font-family:monospace; font-size:0.8rem;"></textarea>
+        <div style="margin-top:8px"><button type="submit">Parse</button></div>
+      </form>
+      <div id="screenshot-status" class="muted" style="margin-top:8px"></div>
+      ${
+        screenshotReview
+          ? `
+        <div style="margin-top:12px">
+          <p class="card-note">Review before saving — uncheck or edit anything that looks wrong:</p>
+          <div style="display:flex; flex-direction:column; gap:6px;">${reviewRows}</div>
+          <button id="screenshot-save" style="margin-top:10px">Save reviewed values</button>
+          <button class="secondary" id="screenshot-cancel" style="margin-top:10px">Cancel</button>
+        </div>`
+          : ""
+      }
     </div>
   `;
 }
@@ -236,7 +304,7 @@ function renderMarketPrices() {
   return `
     <div class="card">
       <h2>Market prices</h2>
-      <p class="card-note">Auto-refreshed daily from public sources — see the project README for exactly which. Fund NAVs and index-proxied prices are approximate, not live intraday quotes.</p>
+      <p class="card-note">Refreshed ${REFRESH_SCHEDULE_NOTE} Gold here is the global spot price converted to EGP (via GoldAPI.io) — not the same as Thndr's local Egyptian gold price, which can run at a premium or discount to a simple spot conversion. Clouds has no market price at all (see the Positions table for how its estimate works instead).</p>
       ${rows ? `<table><thead><tr><th>Ticker</th><th class="num">Price</th><th>Source</th><th>Updated</th></tr></thead><tbody>${rows}</tbody></table>` : `<p class="muted">No prices synced yet.</p>`}
     </div>
   `;
@@ -287,6 +355,7 @@ function today() {
   return new Date().toISOString().slice(0, 10);
 }
 
+
 function wireEvents() {
   document.getElementById("sign-out")?.addEventListener("click", async () => {
     await store.signOut();
@@ -321,7 +390,13 @@ function wireEvents() {
   document.getElementById("value-form")?.addEventListener("submit", async (e) => {
     e.preventDefault();
     const f = e.target;
-    await store.setCurrentValue(f.ticker.value.toUpperCase(), parseFloat(f.value.value), f.date.value);
+    const ticker = f.ticker.value.toUpperCase();
+    await store.setCurrentValue(
+      ticker,
+      parseFloat(f.value.value),
+      f.date.value,
+      state.marketPrices[ticker] || null
+    );
     f.reset();
     refresh();
   });
@@ -373,6 +448,43 @@ function wireEvents() {
       state.error = err.message;
       render();
     }
+  });
+
+  document.getElementById("screenshot-paste-form")?.addEventListener("submit", (e) => {
+    e.preventDefault();
+    const statusEl = document.getElementById("screenshot-status");
+    try {
+      const parsed = JSON.parse(e.target.json.value);
+      if (!Object.keys(parsed).length) {
+        statusEl.textContent = "That parsed to an empty object — nothing to review.";
+        return;
+      }
+      screenshotReview = parsed;
+      statusEl.textContent = "";
+      render();
+    } catch (err) {
+      statusEl.textContent = `Couldn't parse that as JSON: ${err.message}`;
+    }
+  });
+
+  document.getElementById("screenshot-save")?.addEventListener("click", async () => {
+    const entries = Object.keys(screenshotReview);
+    for (let i = 0; i < entries.length; i++) {
+      const include = document.querySelector(`[data-review-include="${i}"]`)?.checked;
+      if (!include) continue;
+      const ticker = document.querySelector(`[data-review-ticker="${i}"]`).value.toUpperCase();
+      const value = parseFloat(document.querySelector(`[data-review-value="${i}"]`).value);
+      if (ticker && !isNaN(value)) {
+        await store.setCurrentValue(ticker, value, today(), state.marketPrices[ticker] || null);
+      }
+    }
+    screenshotReview = null;
+    refresh();
+  });
+
+  document.getElementById("screenshot-cancel")?.addEventListener("click", () => {
+    screenshotReview = null;
+    render();
   });
 
   document.getElementById("export-btn")?.addEventListener("click", () => {

@@ -64,7 +64,11 @@ async function loadPortfolioRemote(userId) {
 
   const currentValues = {};
   for (const row of values || []) {
-    currentValues[row.ticker] = { value: row.value, lastValued: row.last_valued };
+    currentValues[row.ticker] = {
+      value: row.value,
+      lastValued: row.last_valued,
+      priceAtValuation: row.price_at_valuation,
+    };
   }
   const targets = {};
   for (const row of targetRows || []) {
@@ -89,6 +93,8 @@ function buildPositions(transactions, currentValues, targets) {
   for (const [ticker, v] of Object.entries(currentValues)) {
     if (!positions[ticker]) positions[ticker] = { transactions: [], currentValue: 0 };
     positions[ticker].currentValue = v.value;
+    positions[ticker].lastValued = v.lastValued;
+    positions[ticker].priceAtValuation = v.priceAtValuation ?? null;
   }
   return { positions, targets };
 }
@@ -114,19 +120,25 @@ export async function addTransaction(ticker, type, amount, date) {
   }
 }
 
-export async function setCurrentValue(ticker, value, date) {
+// marketPriceForTicker: the current entry from market_prices for this
+// ticker, if any (pass state.marketPrices[ticker] from the caller). Stored
+// alongside the value so estimate.js can later scale proportionally to
+// price movement since this exact confirmation.
+export async function setCurrentValue(ticker, value, date, marketPriceForTicker = null) {
   const user = await getUser();
+  const priceAtValuation = marketPriceForTicker?.price ?? null;
   if (user) {
     const { error } = await supabase.from("current_values").upsert({
       user_id: user.id,
       ticker,
       value,
       last_valued: date,
+      price_at_valuation: priceAtValuation,
     });
     if (error) throw error;
   } else {
     const data = readLocal();
-    data.currentValues[ticker] = { value, lastValued: date };
+    data.currentValues[ticker] = { value, lastValued: date, priceAtValuation };
     writeLocal(data);
   }
 }

@@ -22,8 +22,18 @@ create table if not exists current_values (
   ticker text not null,
   value numeric not null check (value >= 0),
   last_valued date not null default current_date,
+  -- The market_prices.price for this ticker at the moment `value` was
+  -- confirmed, if one was available. Lets the app estimate value between
+  -- confirmations by scaling proportionally to the price change since -
+  -- null if no market price existed for this ticker at that time (e.g.
+  -- Clouds, C2O, T70), in which case no price-ratio estimate is shown.
+  price_at_valuation numeric,
   primary key (user_id, ticker)
 );
+
+-- Existing databases: add the column if it's not there yet (no-op on a
+-- fresh install where the create table above already included it).
+alter table current_values add column if not exists price_at_valuation numeric;
 
 create table if not exists targets (
   user_id uuid not null references auth.users(id) on delete cascade,
