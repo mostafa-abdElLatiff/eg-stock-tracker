@@ -10,12 +10,21 @@ create table if not exists transactions (
   ticker text not null,
   type text not null check (type in ('buy', 'sell')),
   amount numeric not null check (amount > 0),
+  -- Optional: number of shares/units this transaction was for. Doesn't
+  -- apply to Clouds (cash, no share concept) - leave null there. When
+  -- present, lets estimate.js value a position as (net shares held) x
+  -- (live market price), which is more robust than scaling from whenever
+  -- you last happened to confirm a value.
+  shares numeric,
   txn_date date not null default current_date,
   note text,
   created_at timestamptz not null default now()
 );
 
 create index if not exists transactions_user_id_idx on transactions(user_id);
+
+-- Existing databases: add the column if it's not there yet.
+alter table transactions add column if not exists shares numeric;
 
 create table if not exists current_values (
   user_id uuid not null references auth.users(id) on delete cascade,

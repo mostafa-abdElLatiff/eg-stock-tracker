@@ -9,6 +9,21 @@ export function netInvested(transactions) {
   );
 }
 
+export function netShares(transactions) {
+  return transactions.reduce(
+    (total, t) => total + (t.type === "buy" ? t.shares || 0 : -(t.shares || 0)),
+    0
+  );
+}
+
+// True only if every transaction for this position has a share count -
+// a partial mix of "some buys have shares, some don't" makes the total
+// unreliable, so estimate.js should fall back to the price-ratio method
+// rather than trust an incomplete share count.
+export function hasCompleteShareData(transactions) {
+  return transactions.length > 0 && transactions.every((t) => t.shares != null && t.shares > 0);
+}
+
 // positions: { [ticker]: { transactions: [...], currentValue: number } }
 export function summarizePositions(positions, targets) {
   const totalValue = Object.values(positions).reduce(

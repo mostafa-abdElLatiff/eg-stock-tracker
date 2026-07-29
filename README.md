@@ -23,11 +23,14 @@ Everything runs free: Vercel (hosting) + Supabase (auth + database), both free t
 
 ## Estimated value between manual confirmations
 
-The Positions table shows an *estimate* of each position's value in between times you actually confirm it, so gains don't look stale for weeks at a time. Two different mechanisms, because these aren't the same kind of number:
+The Positions table shows an *estimate* of each position's value in between times you actually confirm it, so gains don't look stale for weeks at a time. Three mechanisms, tried in priority order, because these aren't the same kind of number:
 
-- **Stocks, funds, gold**: scaled proportionally to how much the market price has moved since you last confirmed a value (`src/estimate.js`, price-ratio method). Exact for stocks, very close for the snduk-sourced funds since that's their real NAV.
+- **Stocks, funds, gold — with a share/unit count on every buy/sell**: valued directly as (net shares/units held) × live market price (`src/estimate.js`, shares method). The most accurate option, since it doesn't depend on when you last confirmed a value — enter the share/unit count when recording a purchase or sale to unlock this.
+- **Stocks, funds, gold — without complete share data**: scaled proportionally to how much the market price has moved since you last confirmed a value (price-ratio method). Exact for stocks, very close for the snduk-sourced funds since that's their real NAV.
 - **Clouds**: not a market price at all, so it's estimated by compounding the known ~19.5%/year rate daily from your last confirmed value. That rate is a maintained constant in `src/estimate.js` (`CLOUDS_ANNUAL_RATE`), not fetched from anywhere — update it there if Thndr's rate changes (e.g. as CBE cuts continue).
 - **C2O, T70, or anything with no price source**: no estimate shown, just your last confirmed value as-is, clearly labeled with the date.
+
+The Positions table also shows an **average cost** per share/unit ((total invested) ÷ (net shares/units held)) once every transaction for that ticker has a share count recorded.
 
 Every estimated row is labeled with which method produced it — never silently presented as if it were a live, confirmed number.
 

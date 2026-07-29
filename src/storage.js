@@ -78,6 +78,7 @@ async function loadPortfolioRemote(userId) {
     ticker: t.ticker,
     type: t.type,
     amount: t.amount,
+    shares: t.shares,
     date: t.txn_date,
   }));
 
@@ -113,9 +114,15 @@ function buildPositions(transactions, currentValues, targets) {
 // omitted, price_at_valuation is cleared rather than left stale - a wrong
 // baseline paired with a freshly-bumped value would make later price-ratio
 // estimates wrong, so "no estimate, just the confirmed number" is safer.
-export async function addTransaction(ticker, type, amount, date, marketPriceForTicker = null) {
+//
+// shares: optional. When you know it (Thndr shows this for stock/fund/gold
+// buys), estimate.js can then value the position as (net shares) x (live
+// price) - more accurate than the price-ratio-since-last-confirmation
+// fallback, since it doesn't depend on when you last happened to update a
+// value. Leave null for Clouds (cash, no share concept).
+export async function addTransaction(ticker, type, amount, date, marketPriceForTicker = null, shares = null) {
   const user = await getUser();
-  const txn = { ticker, type, amount, date };
+  const txn = { ticker, type, amount, shares, date };
   const signedAmount = type === "buy" ? amount : -amount;
   const priceAtValuation = marketPriceForTicker?.price ?? null;
 
@@ -125,6 +132,7 @@ export async function addTransaction(ticker, type, amount, date, marketPriceForT
       ticker,
       type,
       amount,
+      shares,
       txn_date: date,
     });
     if (txnError) throw txnError;

@@ -1,6 +1,6 @@
 import { supabase, hasSupabaseConfig } from "./supabase.js";
 import * as store from "./storage.js";
-import { summarizePositions, suggestSplit } from "./portfolio.js";
+import { summarizePositions, suggestSplit, netShares, netInvested, hasCompleteShareData } from "./portfolio.js";
 import { estimateValue, CLOUDS_ANNUAL_RATE } from "./estimate.js";
 
 const REFRESH_SCHEDULE_NOTE =
@@ -146,6 +146,10 @@ function renderPositionsTable(summary, estimates) {
   const rows = summary.rows
     .map((r) => {
       const est = estimates[r.ticker] || { kind: "confirmed" };
+      const txns = state.positions[r.ticker]?.transactions || [];
+      const avgCost = hasCompleteShareData(txns)
+        ? netInvested(txns) / netShares(txns)
+        : null;
       return `
         <tr>
           <td class="tick">${r.ticker}${estimateLabel(r.ticker, est)}</td>
@@ -153,6 +157,7 @@ function renderPositionsTable(summary, estimates) {
           <td class="num">${Math.round(r.value).toLocaleString()}</td>
           <td class="num ${r.gain >= 0 ? "pos" : "neg"}">${r.gain >= 0 ? "+" : ""}${Math.round(r.gain).toLocaleString()}</td>
           <td class="num ${r.gainPct >= 0 ? "pos" : "neg"}">${fmtPct(r.gainPct)}</td>
+          <td class="num">${avgCost != null ? avgCost.toFixed(2) : "—"}</td>
           <td class="num">${fmtPct(r.mixPct)}</td>
           <td class="num">${fmtPct(r.targetPct)}</td>
         </tr>`;
@@ -161,9 +166,9 @@ function renderPositionsTable(summary, estimates) {
   return `
     <div class="card">
       <h2>Positions</h2>
-      <p class="card-note">"Value" below is an estimate where possible (see the note under each ticker), refreshed on this schedule: ${REFRESH_SCHEDULE_NOTE}</p>
+      <p class="card-note">"Value" below is an estimate where possible (see the note under each ticker), refreshed on this schedule: ${REFRESH_SCHEDULE_NOTE}. "Avg cost" is (total invested) ÷ (net shares/units held) — only shown once every buy/sell for that ticker has a share count.</p>
       <table>
-        <thead><tr><th>Ticker</th><th class="num">Invested</th><th class="num">Value</th><th class="num">Gain</th><th class="num">Gain %</th><th class="num">Mix %</th><th class="num">Target %</th></tr></thead>
+        <thead><tr><th>Ticker</th><th class="num">Invested</th><th class="num">Value</th><th class="num">Gain</th><th class="num">Gain %</th><th class="num">Avg cost</th><th class="num">Mix %</th><th class="num">Target %</th></tr></thead>
         <tbody>${rows}</tbody>
       </table>
     </div>
@@ -175,20 +180,31 @@ function tickerOptions() {
   return [...tickers].sort().map((t) => `<option value="${t}">${t}</option>`).join("");
 }
 
+// Mutual funds are priced/held in "units" (NAV-based); everything else
+// tradeable on the exchange (stocks, gold by the gram) uses "shares". Clouds
+// is cash, not held in either unit, so it's excluded from the ticker list
+// and the field is just left blank for it (see schema.sql's comment).
+const FUND_TICKERS = ["BAL", "BMM", "BRE", "C2O", "T70"];
+function sharesLabel(ticker) {
+  if (!ticker) return "Shares/Units";
+  return FUND_TICKERS.includes(ticker.trim()) ? "Units" : "Shares";
+}
+
 function renderAddTransactionForm() {
   return `
     <div class="card">
       <h2>Record a purchase or sale</h2>
-      <p class="card-note">Also bumps this position's value by the same amount (buy: +, sell: −) so it doesn't show as a loss until you next confirm the real number — it's a placeholder, not a live price.</p>
+      <p class="card-note">Also bumps this position's value by the same amount (buy: +, sell: −) so it doesn't show as a loss until you next confirm the real number — it's a placeholder, not a live price. Enter the share/unit count too (skip for Clouds) and, once every buy for a ticker has one, the Positions table can value it directly as shares × live price and show your average cost.</p>
       <form class="inline" id="txn-form">
         <div class="field"><label>Ticker</label>
-          <input list="ticker-list" name="ticker" required placeholder="e.g. COMI" />
+          <input list="ticker-list" name="ticker" required placeholder="e.g. COMI" id="txn-ticker" />
           <datalist id="ticker-list">${tickerOptions()}</datalist>
         </div>
         <div class="field"><label>Type</label>
           <select name="type"><option value="buy">Buy</option><option value="sell">Sell</option></select>
         </div>
         <div class="field"><label>Amount (EGP)</label><input type="number" name="amount" min="0" step="0.01" required /></div>
+        <div class="field"><label id="txn-shares-label">${sharesLabel()}</label><input type="number" name="shares" min="0" step="0.0001" placeholder="optional" /></div>
         <div class="field"><label>Date</label><input type="date" name="date" value="${today()}" /></div>
         <button type="submit">Save</button>
       </form>
@@ -375,16 +391,23 @@ function wireEvents() {
     }
   });
 
+  document.getElementById("txn-ticker")?.addEventListener("input", (e) => {
+    const label = document.getElementById("txn-shares-label");
+    if (label) label.textContent = sharesLabel(e.target.value);
+  });
+
   document.getElementById("txn-form")?.addEventListener("submit", async (e) => {
     e.preventDefault();
     const f = e.target;
     const ticker = f.ticker.value.trim();
+    const shares = f.shares.value ? parseFloat(f.shares.value) : null;
     await store.addTransaction(
       ticker,
       f.type.value,
       parseFloat(f.amount.value),
       f.date.value,
-      state.marketPrices[ticker] || null
+      state.marketPrices[ticker] || null,
+      shares
     );
     f.reset();
     refresh();
