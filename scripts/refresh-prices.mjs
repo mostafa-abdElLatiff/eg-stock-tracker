@@ -77,8 +77,10 @@ async function fetchEodhdStock(ticker, symbol) {
   const res = await fetch(url);
   if (!res.ok) throw new Error(`EODHD ${ticker}: HTTP ${res.status}`);
   const data = await res.json();
-  if (!data.close) throw new Error(`EODHD ${ticker}: no price in response`);
-  return { ticker, price: data.close, source: "EODHD", is_estimate: false };
+  console.error(`DEBUG EODHD ${ticker}:`, JSON.stringify(data));
+  const price = parseFloat(data.close);
+  if (!data.close || Number.isNaN(price)) throw new Error(`EODHD ${ticker}: no usable price in response (got ${JSON.stringify(data.close)})`);
+  return { ticker, price, source: "EODHD", is_estimate: false };
 }
 
 async function fetchGoldPrice() {
