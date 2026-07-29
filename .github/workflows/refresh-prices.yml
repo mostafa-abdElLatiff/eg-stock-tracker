@@ -21,10 +21,8 @@ jobs:
       - uses: actions/setup-node@v4
         with:
           node-version: "22"
-      - working-directory: webapp
-        run: npm install
-      - working-directory: webapp
-        run: npm run refresh-prices
+      - run: npm install
+      - run: npm run refresh-prices
         env:
           SUPABASE_URL: ${{ secrets.SUPABASE_URL }}
           SUPABASE_SERVICE_ROLE_KEY: ${{ secrets.SUPABASE_SERVICE_ROLE_KEY }}

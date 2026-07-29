@@ -56,7 +56,7 @@ gh repo create eg-stock-tracker --public --source=. --push
 ### 3. Vercel
 
 1. Import the GitHub repo into Vercel.
-2. Root directory: `webapp` (if you pushed from inside `webapp/`, leave as default).
+2. Root directory: leave as default (repo root). Since you ran `git init` from inside `webapp/`, the repo root already *is* the app's contents — `package.json` sits at the top level, there's no nested `webapp/` folder inside the repo. (Same reason the GitHub Action steps don't set `working-directory: webapp` — that was a bug, fixed.)
 3. Environment Variables:
    - `VITE_SUPABASE_URL` = your Supabase project URL
    - `VITE_SUPABASE_ANON_KEY` = your Supabase anon key
