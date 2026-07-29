@@ -7,7 +7,12 @@
 //   - BAL/BMM/BRE: snduk.com fund pages - price is embedded server-side in
 //     a Next.js RSC payload as `"currentPrice":"X.XXXX"`. Confirmed by
 //     fetching the pages directly and finding real, current prices.
-//   - COMI/MASR/ETEL/CLHO/IBCT: EODHD free tier (20 calls/day - this uses 5)
+//   - COMI/MASR/ETEL/CLHO: EODHD free tier (20 calls/day - this uses 4-5).
+//     No live intraday EGX data on this plan - `close` comes back "NA",
+//     so this uses `previousClose` (flagged is_estimate) instead. Confirmed
+//     live against the real API key, not just assumed from docs.
+//   - IBCT: EODHD has no data at all for this one (not even previousClose)
+//     - stays unpriced, same as C2O/T70 below.
 //   - Gold: GoldAPI.io (EGP) - needs a free API key
 //   - C2O, T70: no confirmed public source found yet - left as a manual
 //     entry with is_estimate flagged, rather than guessing at an endpoint.
@@ -22,12 +27,11 @@ const SUPABASE_SERVICE_ROLE_KEY = process.env.SUPABASE_SERVICE_ROLE_KEY;
 const EODHD_API_KEY = process.env.EODHD_API_KEY;
 const GOLDAPI_KEY = process.env.GOLDAPI_KEY;
 // Which sources this run should skip - set per-schedule by the workflow
-// file, since gold/stocks/funds each run on their own cadence:
-//   - Gold: every 10 min while EGX is open, no daily cap on GoldAPI.
-//   - Stocks (EODHD): free tier caps at 20 calls/day, so these stay on a
-//     sparse 3x/day schedule no matter how often this script runs.
-//   - Funds (snduk): NAVs only settle after market close, so these only
-//     need checking a couple of times post-close, not during the session.
+// file. Two cadences, not three: Gold moves during the session and has no
+// call cap, so it refreshes every 10 min on its own. Funds AND stocks both
+// only get a genuinely new number once a day after close (funds: NAV
+// settles after close; stocks: EODHD's free tier has no live intraday EGX
+// data at all, see above) - so they share the same post-close schedule.
 const SKIP_EODHD = process.env.SKIP_EODHD === "true";
 const SKIP_FUNDS = process.env.SKIP_FUNDS === "true";
 
@@ -77,10 +81,17 @@ async function fetchEodhdStock(ticker, symbol) {
   const res = await fetch(url);
   if (!res.ok) throw new Error(`EODHD ${ticker}: HTTP ${res.status}`);
   const data = await res.json();
-  console.error(`DEBUG EODHD ${ticker}:`, JSON.stringify(data));
-  const price = parseFloat(data.close);
-  if (!data.close || Number.isNaN(price)) throw new Error(`EODHD ${ticker}: no usable price in response (got ${JSON.stringify(data.close)})`);
-  return { ticker, price, source: "EODHD", is_estimate: false };
+  // EODHD's free tier has no live intraday EGX quotes - `close` comes back
+  // as the literal string "NA" (confirmed live, Jul 2026), not an error or
+  // null. `previousClose` is the real EOD price and IS populated, so fall
+  // back to that - it's genuinely all that's available here for free,
+  // which is also why stocks refresh on the same post-close cadence as
+  // funds now rather than during the session (see the workflow file).
+  const live = parseFloat(data.close);
+  const prev = parseFloat(data.previousClose);
+  if (!Number.isNaN(live)) return { ticker, price: live, source: "EODHD", is_estimate: false };
+  if (!Number.isNaN(prev)) return { ticker, price: prev, source: "EODHD", is_estimate: true };
+  throw new Error(`EODHD ${ticker}: no usable price in response (close=${JSON.stringify(data.close)}, previousClose=${JSON.stringify(data.previousClose)})`);
 }
 
 async function fetchGoldPrice() {

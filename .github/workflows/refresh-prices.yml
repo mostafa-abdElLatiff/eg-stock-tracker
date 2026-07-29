@@ -3,27 +3,19 @@ name: Refresh market prices
 on:
   schedule:
     # Cairo is UTC+2 year-round (no DST). EGX trading hours are 10:00-14:30
-    # Cairo, Sun-Thu. Three independent cadences, one per source, because
-    # each has a different constraint:
+    # Cairo, Sun-Thu. Two cadences, not three:
     #
     # Gold (GoldAPI): no daily call cap, and the spot price genuinely moves
     # intraday, so it refreshes every 10 min across the whole session,
     # 08:00-12:30 UTC. A couple of runs land just after the 12:30 UTC
     # (14:30 Cairo) close - harmless, same closing price refetched.
     - cron: "*/10 8-12 * * 0-4"
-    # COMI/MASR/ETEL/CLHO/IBCT (EODHD): capped at 20 calls/day on the free
-    # tier (5 tickers x this many runs). This is a hard ceiling, not a
-    # choice - true 10-min refresh here isn't achievable for free (checked
-    # for a scrapable alternative like the snduk one below; nothing panned
-    # out - mubasher.info's price loads via JS not static HTML, and Yahoo
-    # Finance's "COMI.CA" turned out to be an unrelated mutual fund with a
-    # colliding ticker, not the real EGX stock). So: open / mid-session /
-    # just-after-close. 5 x 3 = 15 calls/day, under the cap with headroom
-    # for manual workflow_dispatch runs.
-    - cron: "0 8,11,13 * * 0-4" # 10:00 / 13:00 / 15:00 Cairo
-    # Funds (snduk): NAVs settle after market close, sometimes with a lag,
-    # so checking during the session is pointless - twice a day, after
-    # close, catches the settled value even if the first check is early.
+    # Funds (snduk) AND stocks (EODHD) share this post-close schedule -
+    # confirmed live that EODHD's free tier has no intraday EGX data at all
+    # (real-time `close` comes back "NA"; only `previousClose` is usable),
+    # so stocks only get a genuinely new number once a day anyway, same as
+    # fund NAVs which settle after close. Twice a day catches a delayed
+    # settlement on either source.
     - cron: "30 13 * * 0-4" # 15:30 Cairo - shortly after close
     - cron: "0 16 * * 0-4"  # 18:00 Cairo - later catch-up in case of a lag
   workflow_dispatch: {} # lets you trigger it manually from the Actions tab - always does a full refresh
@@ -43,8 +35,9 @@ jobs:
           SUPABASE_SERVICE_ROLE_KEY: ${{ secrets.SUPABASE_SERVICE_ROLE_KEY }}
           EODHD_API_KEY: ${{ secrets.EODHD_API_KEY }}
           GOLDAPI_KEY: ${{ secrets.GOLDAPI_KEY }}
-          # Gold always runs (cheap, no cap). Each other source only runs on
-          # its own schedule(s) - skipped otherwise. Manual workflow_dispatch
-          # runs (github.event.schedule is unset) always do a full refresh.
-          SKIP_EODHD: ${{ contains(fromJSON('["*/10 8-12 * * 0-4","30 13 * * 0-4","0 16 * * 0-4"]'), github.event.schedule) && 'true' || '' }}
-          SKIP_FUNDS: ${{ contains(fromJSON('["*/10 8-12 * * 0-4","0 8,11,13 * * 0-4"]'), github.event.schedule) && 'true' || '' }}
+          # Gold always runs (cheap, no cap). Funds+stocks only run on the
+          # post-close schedule - skipped on the 10-min gold-only trigger.
+          # Manual workflow_dispatch runs (github.event.schedule is unset)
+          # always do a full refresh.
+          SKIP_EODHD: ${{ github.event.schedule == '*/10 8-12 * * 0-4' && 'true' || '' }}
+          SKIP_FUNDS: ${{ github.event.schedule == '*/10 8-12 * * 0-4' && 'true' || '' }}

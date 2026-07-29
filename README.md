@@ -12,16 +12,16 @@ Everything runs free: Vercel (hosting) + Supabase (auth + database), both free t
 | Ticker | Source | Notes |
 |---|---|---|
 | BAL, BMM, BRE | snduk.com (public, no login) | Verified working while building this |
-| COMI, MASR, ETEL, CLHO, IBCT | EODHD free tier | 20 calls/day free limit, 3 refreshes/day x 5 tickers = 15/day used |
+| COMI, MASR, ETEL, CLHO | EODHD free tier | EODHD's free plan has no live intraday EGX data — confirmed live that `close` comes back `"NA"` for these — so it uses `previousClose` instead (flagged `is_estimate`), which is genuinely once-a-day data regardless of call frequency |
+| IBCT | — | EODHD has no data at all for this one (not even previous close). Enter manually, same as C2O/T70 |
 | Gold | GoldAPI.io | Global spot converted to EGP — **not** the same as Thndr's local Egyptian gold price, which can run at a premium/discount to a simple conversion |
 | C2O, T70 | — | No confirmed public source found. Enter manually, or add a fetcher in `scripts/refresh-prices.mjs` if you find one |
 | Clouds | — | Not a market price at all — it's interest-accruing cash, estimated separately (see below) |
 
-**Schedule** (`.github/workflows/refresh-prices.yml`), Sunday–Thursday only, three independent cadences:
+**Schedule** (`.github/workflows/refresh-prices.yml`), Sunday–Thursday only, two cadences:
 
 - **Gold**: every 10 minutes, 10:00–14:30 Cairo time (EGX trading hours). No daily call cap on GoldAPI, and spot gold genuinely moves intraday.
-- **COMI, MASR, ETEL, CLHO, IBCT (EODHD)**: 3x/day — open, mid-session, just after the 14:30 close. This is a hard ceiling, not a choice: EODHD's free tier caps at 20 calls/day, and 5 tickers x 3 runs = 15/day already uses most of that headroom. A scrapable free alternative (like the snduk one used for funds) was checked and ruled out — mubasher.info's price loads via client-side JS, not static HTML, and Yahoo Finance's `COMI.CA` is actually an unrelated mutual fund with a colliding ticker, not the real EGX stock. If a genuine free unlimited source turns up later, this can move to the 10-min tier too.
-- **BAL, BMM, BRE (snduk funds)**: twice a day, after market close (15:30 and 18:00 Cairo) rather than during the session — fund NAVs settle after close, sometimes with a lag, so checking intraday is pointless and checking twice post-close catches a delayed settlement.
+- **COMI, MASR, ETEL, CLHO (EODHD) + BAL, BMM, BRE (snduk funds)**: twice a day, after market close (15:30 and 18:00 Cairo). Stocks and funds share this cadence because both only produce a genuinely new number once a day — fund NAVs settle after close (sometimes with a lag), and EODHD's free tier simply has no live intraday EGX quotes at all (checked and ruled out a scrapable free alternative too: mubasher.info's price loads via a client-side AngularJS call to an undocumented API, not static HTML like snduk; Yahoo Finance's `COMI.CA` turned out to be an unrelated mutual fund with a colliding ticker, not the real EGX stock). Checking twice post-close catches a delayed settlement on either source. If a genuine free live-quote source for EGX stocks turns up later, stocks could move to the 10-min tier alongside gold.
 
 **Deliberately not automated:** Thndr and TheRumble logins. See the main project conversation for why — the short version is that storing brokerage/subscription credentials in any unattended pipeline is a real security and ToS risk, regardless of how it's stored. The AI-analysis section is refreshed on request instead: ask Claude to log in with your own authenticated browser session and review TheRumble, then paste the resulting JSON into the app.
 
