@@ -2,16 +2,21 @@ name: Refresh market prices
 
 on:
   schedule:
-    # Cairo is UTC+2 year-round (no DST). 3x/day, Sun-Thu (EGX trading days):
-    # covers open / mid-session / just-after-close (EGX closes 14:30 Cairo).
-    # 5 stock tickers x 3 runs = 15 EODHD calls/day, under the 20/day free
-    # cap with headroom for manual workflow_dispatch runs. Going more
-    # frequent than this would exceed the free tier for no real benefit -
-    # see README for why (funds/stocks don't move outside these windows).
-    - cron: "0 8 * * 0-4"  # 10:00 Cairo - market open
-    - cron: "0 11 * * 0-4" # 13:00 Cairo - mid-session
-    - cron: "0 13 * * 0-4" # 15:00 Cairo - just after 14:30 close
-  workflow_dispatch: {} # lets you trigger it manually from the Actions tab
+    # Cairo is UTC+2 year-round (no DST). EGX trading hours are 10:00-14:30
+    # Cairo, Sun-Thu.
+    #
+    # Funds (snduk) + gold (GoldAPI): no meaningful daily call cap, so these
+    # refresh every 10 min across the whole session, 08:00-12:30 UTC. A
+    # couple of runs land just after the 12:30 UTC (14:30 Cairo) close -
+    # harmless, same closing price refetched.
+    - cron: "*/10 8-12 * * 0-4"
+    # COMI/MASR/ETEL/CLHO/IBCT (EODHD): capped at 20 calls/day on the free
+    # tier (5 tickers x this many runs), so these stay on the original sparse
+    # schedule - open / mid-session / just-after-close - regardless of how
+    # often the cron above fires. 5 x 3 = 15 calls/day, under the cap with
+    # headroom for manual workflow_dispatch runs.
+    - cron: "0 8,11,13 * * 0-4" # 10:00 / 13:00 / 15:00 Cairo
+  workflow_dispatch: {} # lets you trigger it manually from the Actions tab - always does a full refresh
 
 jobs:
   refresh:
@@ -28,3 +33,8 @@ jobs:
           SUPABASE_SERVICE_ROLE_KEY: ${{ secrets.SUPABASE_SERVICE_ROLE_KEY }}
           EODHD_API_KEY: ${{ secrets.EODHD_API_KEY }}
           GOLDAPI_KEY: ${{ secrets.GOLDAPI_KEY }}
+          # The 10-min schedule only refreshes funds/gold - skip EODHD calls
+          # on that trigger so the 5 stock tickers stay within the 20/day
+          # free-tier cap. Manual runs and the 3x/day schedule do a full
+          # refresh (this evaluates to empty/false for both).
+          SKIP_EODHD: ${{ github.event.schedule == '*/10 8-12 * * 0-4' && 'true' || '' }}

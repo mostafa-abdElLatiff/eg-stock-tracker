@@ -45,7 +45,7 @@ export function summarizePositions(positions, targets) {
       const targetPct = (targets[ticker] || 0) * 100;
       return { ticker, invested, value, gain, gainPct, mixPct, targetPct };
     })
-    .sort((a, b) => b.value - a.value);
+    .sort((a, b) => b.gain - a.gain);
 
   return {
     rows,
