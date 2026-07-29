@@ -17,10 +17,11 @@ Everything runs free: Vercel (hosting) + Supabase (auth + database), both free t
 | C2O, T70 | — | No confirmed public source found. Enter manually, or add a fetcher in `scripts/refresh-prices.mjs` if you find one |
 | Clouds | — | Not a market price at all — it's interest-accruing cash, estimated separately (see below) |
 
-**Schedule** (`.github/workflows/refresh-prices.yml`), Sunday–Thursday only:
+**Schedule** (`.github/workflows/refresh-prices.yml`), Sunday–Thursday only, three independent cadences:
 
-- **BAL, BMM, BRE, Gold**: every 10 minutes, 10:00–14:30 Cairo time (EGX trading hours). No meaningful daily call cap on snduk or GoldAPI, so these can run this often — though fund NAVs in practice still only change once a day.
-- **COMI, MASR, ETEL, CLHO, IBCT (EODHD)**: stay on the original 3x/day — open, mid-session, just after the 14:30 close — regardless of the schedule above. This is a hard constraint, not a choice: EODHD's free tier caps at 20 calls/day, and 5 tickers x 3 runs = 15/day already uses most of that headroom. Going more frequent would exceed the free tier and break stock-price refresh for the rest of the day.
+- **Gold**: every 10 minutes, 10:00–14:30 Cairo time (EGX trading hours). No daily call cap on GoldAPI, and spot gold genuinely moves intraday.
+- **COMI, MASR, ETEL, CLHO, IBCT (EODHD)**: 3x/day — open, mid-session, just after the 14:30 close. This is a hard ceiling, not a choice: EODHD's free tier caps at 20 calls/day, and 5 tickers x 3 runs = 15/day already uses most of that headroom. A scrapable free alternative (like the snduk one used for funds) was checked and ruled out — mubasher.info's price loads via client-side JS, not static HTML, and Yahoo Finance's `COMI.CA` is actually an unrelated mutual fund with a colliding ticker, not the real EGX stock. If a genuine free unlimited source turns up later, this can move to the 10-min tier too.
+- **BAL, BMM, BRE (snduk funds)**: twice a day, after market close (15:30 and 18:00 Cairo) rather than during the session — fund NAVs settle after close, sometimes with a lag, so checking intraday is pointless and checking twice post-close catches a delayed settlement.
 
 **Deliberately not automated:** Thndr and TheRumble logins. See the main project conversation for why — the short version is that storing brokerage/subscription credentials in any unattended pipeline is a real security and ToS risk, regardless of how it's stored. The AI-analysis section is refreshed on request instead: ask Claude to log in with your own authenticated browser session and review TheRumble, then paste the resulting JSON into the app.
 

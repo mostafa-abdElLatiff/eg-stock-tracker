@@ -21,11 +21,15 @@ const SUPABASE_URL = process.env.SUPABASE_URL;
 const SUPABASE_SERVICE_ROLE_KEY = process.env.SUPABASE_SERVICE_ROLE_KEY;
 const EODHD_API_KEY = process.env.EODHD_API_KEY;
 const GOLDAPI_KEY = process.env.GOLDAPI_KEY;
-// Set by the high-frequency (every 10 min) workflow schedule, which only
-// covers snduk + gold - EODHD's free tier is capped at 20 calls/day, so the
-// 5 EODHD-sourced stocks stay on their own sparser schedule (see the
-// workflow file) regardless of how often this script itself runs.
+// Which sources this run should skip - set per-schedule by the workflow
+// file, since gold/stocks/funds each run on their own cadence:
+//   - Gold: every 10 min while EGX is open, no daily cap on GoldAPI.
+//   - Stocks (EODHD): free tier caps at 20 calls/day, so these stay on a
+//     sparse 3x/day schedule no matter how often this script runs.
+//   - Funds (snduk): NAVs only settle after market close, so these only
+//     need checking a couple of times post-close, not during the session.
 const SKIP_EODHD = process.env.SKIP_EODHD === "true";
+const SKIP_FUNDS = process.env.SKIP_FUNDS === "true";
 
 if (!SUPABASE_URL || !SUPABASE_SERVICE_ROLE_KEY) {
   console.error("Missing SUPABASE_URL or SUPABASE_SERVICE_ROLE_KEY env vars.");
@@ -96,7 +100,9 @@ async function main() {
   const errors = [];
 
   const jobs = [
-    ...Object.entries(SNDUK_FUNDS).map(([ticker, slug]) => () => fetchSndukPrice(ticker, slug)),
+    ...(SKIP_FUNDS
+      ? []
+      : Object.entries(SNDUK_FUNDS).map(([ticker, slug]) => () => fetchSndukPrice(ticker, slug))),
     ...(SKIP_EODHD
       ? []
       : Object.entries(EODHD_STOCKS).map(([ticker, symbol]) => () => fetchEodhdStock(ticker, symbol))),
