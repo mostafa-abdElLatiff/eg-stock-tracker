@@ -7,7 +7,7 @@
 //   - BAL/BMM/BRE: snduk.com fund pages - price is embedded server-side in
 //     a Next.js RSC payload as `"currentPrice":"X.XXXX"`. Confirmed by
 //     fetching the pages directly and finding real, current prices.
-//   - COMI/MASR/ETEL/CLHO: EODHD free tier (20 calls/day - this uses 4-5).
+//   - COMI/MASR/ORAS/CLHO: EODHD free tier (20 calls/day - this uses 4-5).
 //     No live intraday EGX data on this plan - `close` comes back "NA",
 //     so this uses `previousClose` (flagged is_estimate) instead. Confirmed
 //     live against the real API key, not just assumed from docs.
@@ -54,7 +54,7 @@ const SNDUK_FUNDS = {
 const EODHD_STOCKS = {
   COMI: "COMI.EGX",
   MASR: "MASR.EGX",
-  ETEL: "ETEL.EGX",
+  ORAS: "ORAS.EGX",
   CLHO: "CLHO.EGX",
   IBCT: "IBCT.EGX",
 };
