@@ -11,6 +11,9 @@
   --bad: #eb6834;
   --accent: #2a78d6;
   --accent-ink: #fff;
+  --support: #2f6da8;
+  --resistance: #b5722a;
+  --sma: #9a9890;
 }
 @media (prefers-color-scheme: dark) {
   :root {
@@ -26,6 +29,9 @@
     --bad: #d95926;
     --accent: #3987e5;
     --accent-ink: #fff;
+    --support: #5b9bd5;
+    --resistance: #e0a458;
+    --sma: #6b6a63;
   }
 }
 
@@ -55,6 +61,7 @@ h1 { font-size: 1.3rem; margin: 0; }
   border-radius: 12px;
   padding: 18px 20px;
   margin-bottom: 18px;
+  overflow-x: auto;
 }
 h2 { font-size: 1rem; margin: 0 0 4px; }
 .card-note { color: var(--text-secondary); font-size: 0.82rem; margin: 0 0 14px; }
@@ -120,3 +127,27 @@ button:disabled { opacity: 0.5; cursor: not-allowed; }
 .muted { color: var(--text-muted); font-size: 0.78rem; }
 .error { color: var(--bad); font-size: 0.82rem; }
 a { color: var(--accent); }
+
+/* Per-ticker technical analysis card (chart + exit ladder) */
+.analysis-card {
+  border: 1px solid var(--border);
+  border-radius: 10px;
+  padding: 14px 16px;
+  margin-bottom: 14px;
+  background: var(--page);
+}
+.analysis-head { display: flex; justify-content: space-between; align-items: baseline; margin-bottom: 2px; }
+.analysis-head .tick { font-size: 1rem; }
+.analysis-head .price { font-variant-numeric: tabular-nums; font-weight: 600; }
+.chart { width: 100%; height: auto; display: block; margin: 6px 0 4px; }
+.chart-legend { display: flex; gap: 12px; flex-wrap: wrap; font-size: 0.72rem; color: var(--text-secondary); margin-bottom: 4px; }
+.chart-legend i { display: inline-block; width: 10px; height: 2px; margin-right: 4px; vertical-align: middle; }
+.section-label {
+  font-size: 0.68rem; text-transform: uppercase; letter-spacing: 0.05em;
+  color: var(--text-muted); margin: 14px 0 4px;
+}
+.body-text { font-size: 0.82rem; color: var(--text-secondary); margin: 0 0 6px; line-height: 1.45; }
+.entry-note { font-size: 0.82rem; color: var(--bad); margin: 0; }
+.plan-table { font-size: 0.8rem; }
+.plan-table td.label { color: var(--text-secondary); }
+.plan-table td.num, .plan-table th.num { text-align: right; font-variant-numeric: tabular-nums; }

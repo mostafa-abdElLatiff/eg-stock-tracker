@@ -97,8 +97,16 @@ create table if not exists analysis_notes (
   summary text not null,
   source text not null default 'therumble.app',
   refreshed_at timestamptz not null default now(),
+  -- Optional structured technical analysis: closes/highs/lows/volumes,
+  -- support/resistance/stop/targets, pattern/RSI/trend/outlook text. When
+  -- present, the app renders a real chart + exit ladder instead of just the
+  -- plain-text summary above. Null for tickers that only ever get a text note.
+  chart_data jsonb,
   primary key (user_id, ticker)
 );
+
+-- Existing databases: add the column if it's not there yet.
+alter table analysis_notes add column if not exists chart_data jsonb;
 
 alter table analysis_notes enable row level security;
 

@@ -2,6 +2,7 @@ import { supabase, hasSupabaseConfig } from "./supabase.js";
 import * as store from "./storage.js";
 import { summarizePositions, suggestSplit, netShares, netInvested, hasCompleteShareData } from "./portfolio.js";
 import { estimateValue, CLOUDS_ANNUAL_RATE } from "./estimate.js";
+import { buildAnalysisCard } from "./analysis-chart.js";
 
 const REFRESH_SCHEDULE_NOTE =
   "10:00, 13:00 and 15:00 Cairo time, Sunday–Thursday (EGX trading days). Fund NAVs (BAL/BMM/BRE) only actually change once a day regardless of how often this runs — funds are priced end-of-day, not intraday.";
@@ -327,25 +328,40 @@ function renderMarketPrices() {
   `;
 }
 
+// (total invested) / (net shares) for a ticker, or null if any transaction
+// for it is missing a share count — same rule the Positions table uses, kept
+// as one source of truth rather than a second copy inside pasted analysis JSON.
+function avgCostFor(ticker) {
+  const txns = state.positions[ticker]?.transactions || [];
+  return hasCompleteShareData(txns) ? netInvested(txns) / netShares(txns) : null;
+}
+
 function renderAnalysisNotes() {
   if (!state.user) return "";
   const rows = Object.values(state.analysisNotes)
-    .map(
-      (n) => `
+    .map((n) => {
+      if (n.chart_data && n.chart_data.closes) {
+        try {
+          return buildAnalysisCard(n.ticker, n.chart_data, avgCostFor(n.ticker));
+        } catch (e) {
+          return `<div class="muted">${n.ticker}: couldn't render chart_data (${e.message}) — showing summary only.</div><p style="font-size:0.85rem">${n.summary}</p>`;
+        }
+      }
+      return `
       <div style="margin-bottom:10px">
         <strong class="tick">${n.ticker}</strong> <span class="muted">— refreshed ${new Date(n.refreshed_at).toLocaleDateString()}</span>
         <p style="margin:4px 0 0; font-size:0.85rem">${n.summary}</p>
-      </div>`
-    )
+      </div>`;
+    })
     .join("");
   return `
     <div class="card">
-      <h2>AI analysis (from TheRumble)</h2>
-      <p class="card-note">Refreshed on request, not on a timer — ask Claude to re-review TheRumble and paste the result below when you want a fresh read.</p>
+      <h2>AI analysis</h2>
+      <p class="card-note">Refreshed on request, not on a timer — ask Claude for a fresh technical read and paste the result below. Each ticker can be a plain string (quick text note) or an object with chart data (closes/highs/lows/support/resistance/stop/targets/pattern/rsi/...) for a full chart + exit ladder.</p>
       ${rows || `<p class="muted">Nothing recorded yet.</p>`}
       <details style="margin-top:10px">
         <summary style="cursor:pointer; font-size:0.85rem; color:var(--text-secondary)">Paste a refresh</summary>
-        <p class="card-note" style="margin-top:8px">Expects JSON like <code>{"ISPH": "summary text...", "COMI": "..."}</code> — one key per ticker.</p>
+        <p class="card-note" style="margin-top:8px">Expects JSON like <code>{"GOLD": "text summary...", "COMI": {"closes":[...],"highs":[...],"lows":[...],"support":135.35,"resistance":141,"stop":135,"targets":[141,180.53],"pattern":"...","rsi":39,"trendLabel":"Down","buyApproach":"...","why":"...","short":"...","medium":"...","long":"..."}}</code> — one key per ticker, string or object.</p>
         <form id="analysis-form">
           <textarea name="json" rows="6" style="width:100%; background:var(--page); border:1px solid var(--border); color:var(--text-primary); border-radius:6px; padding:8px; font-family:monospace; font-size:0.8rem;"></textarea>
           <div style="margin-top:8px"><button type="submit">Save</button></div>
@@ -461,12 +477,19 @@ function wireEvents() {
     if (!state.user || !supabase) return;
     try {
       const parsed = JSON.parse(e.target.json.value);
-      const rows = Object.entries(parsed).map(([ticker, summary]) => ({
-        user_id: state.user.id,
-        ticker: ticker.trim(),
-        summary: String(summary),
-        refreshed_at: new Date().toISOString(),
-      }));
+      const rows = Object.entries(parsed).map(([ticker, val]) => {
+        const isChart = val && typeof val === "object";
+        return {
+          user_id: state.user.id,
+          ticker: ticker.trim(),
+          // A plain string is used as-is. An object needs a short text summary
+          // too (shown even if chart rendering ever fails) - use its own
+          // `summary` field if given, else fall back to the pattern/trend text.
+          summary: isChart ? String(val.summary || val.pattern || val.trendLabel || ticker) : String(val),
+          chart_data: isChart ? val : null,
+          refreshed_at: new Date().toISOString(),
+        };
+      });
       const { error } = await supabase.from("analysis_notes").upsert(rows);
       if (error) throw error;
       refresh();
