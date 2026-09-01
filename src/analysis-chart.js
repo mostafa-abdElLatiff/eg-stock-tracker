@@ -165,7 +165,8 @@ export function buildAnalysisCard(ticker, data, avgCost) {
       <span class="tick">${ticker}</span>
       <span class="price">${last.toFixed(2)}</span>
     </div>
-    <div class="muted" style="margin-bottom:8px">price is ${trendVsAvg}</div>
+    <div class="muted" style="margin-bottom:8px">price is ${trendVsAvg}${data.lastUpdated ? ` · data through ${data.lastUpdated}` : ""}</div>
+    ${data.dailyFlag ? `<p class="body-text" style="border-left:2px solid var(--accent);padding-left:8px;margin-bottom:10px"><strong>Latest session:</strong> ${data.dailyFlag}</p>` : ""}
     ${buildChartSVG(data)}
     <div class="chart-legend">
       <span><i style="background:var(--text-primary)"></i>Close</span>
