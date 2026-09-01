@@ -185,7 +185,22 @@ export function buildAnalysisCard(ticker, data, avgCost) {
     </table>
     <p class="body-text"><strong>Buy at support or after breakout?</strong> ${data.buyApproach || ""}</p>
 
-    ${data.why ? `<p class="section-label">Why these exact numbers</p><p class="body-text">${data.why}</p>` : ""}
+    ${data.why ? `<p class="section-label">Why these exact numbers (technical)</p><p class="body-text">${data.why}</p>` : ""}
+
+    ${
+      data.finPosition || data.cashFlow || data.profitability || data.valuation || data.newsRecent
+        ? `<p class="section-label">Fundamentals</p>
+    <table class="plan-table">
+      <tbody>
+        ${data.finPosition ? `<tr><td class="label" style="vertical-align:top">Financial position</td><td colspan="3" style="text-align:left">${data.finPosition}</td></tr>` : ""}
+        ${data.cashFlow ? `<tr><td class="label" style="vertical-align:top">Cash flow</td><td colspan="3" style="text-align:left">${data.cashFlow}</td></tr>` : ""}
+        ${data.profitability ? `<tr><td class="label" style="vertical-align:top">Profitability trend</td><td colspan="3" style="text-align:left">${data.profitability}</td></tr>` : ""}
+        ${data.valuation ? `<tr><td class="label" style="vertical-align:top">Valuation</td><td colspan="3" style="text-align:left">${data.valuation}</td></tr>` : ""}
+        ${data.newsRecent ? `<tr><td class="label" style="vertical-align:top">Recent news/results</td><td colspan="3" style="text-align:left">${data.newsRecent}</td></tr>` : ""}
+      </tbody>
+    </table>`
+        : ""
+    }
 
     <p class="section-label">Exit ladder — what you hold</p>
     <table class="plan-table">
