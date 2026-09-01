@@ -130,21 +130,20 @@ export function buildAnalysisCard(ticker, data, avgCost) {
   const trailPct = 100 - sumPct;
 
   let exitRows = "";
-  if (avgCost != null) exitRows += row("Your avg cost (held)", avgCost.toFixed(2));
-  if (data.support != null) exitRows += row("Support", data.support.toFixed(2), pct(data.support, last));
-  if (data.resistance != null) exitRows += row("Resistance", data.resistance.toFixed(2), pct(data.resistance, last));
+  if (avgCost != null) exitRows += row("Your avg cost (held)", avgCost.toFixed(2), "—", "—");
+  if (data.support != null) exitRows += row("Support", data.support.toFixed(2), pct(data.support, last), pct(data.support, avgCost));
+  if (data.resistance != null) exitRows += row("Resistance", data.resistance.toFixed(2), pct(data.resistance, last), pct(data.resistance, avgCost));
   if (data.stop != null) {
-    const stopBase = avgCost != null ? avgCost : last;
-    exitRows += row(data.trailing ? "Trailing stop (now)" : "Stop-loss (now)", data.stop.toFixed(2), pct(data.stop, stopBase));
+    exitRows += row(data.trailing ? "Trailing stop (now)" : "Stop-loss (now)", data.stop.toFixed(2), pct(data.stop, last), pct(data.stop, avgCost));
   }
   plan.forEach((p, i) => {
-    exitRows += `<tr><td class="label">Target ${i + 1} — sell ${p.sellPct}%</td><td class="num">${p.price.toFixed(2)}</td><td class="label num">${pct(p.price, last)}</td><td class="label">stop → ${p.newStop.toFixed(2)}</td></tr>`;
+    exitRows += `<tr><td class="label">Target ${i + 1} — sell ${p.sellPct}%</td><td class="num">${p.price.toFixed(2)}</td><td class="label num">${pct(p.price, last)}</td><td class="label num">${pct(p.price, avgCost)}</td><td class="label">stop → ${p.newStop.toFixed(2)}</td></tr>`;
   });
   if (plan.length) {
-    exitRows += `<tr><td class="label">Remainder — trail stop</td><td class="num">${trailPct}%</td><td class="label" colspan="2">under each new swing low</td></tr>`;
+    exitRows += `<tr><td class="label">Remainder — trail stop</td><td class="num">${trailPct}%</td><td class="label" colspan="3">under each new swing low</td></tr>`;
   }
   if (data.fundamentalTarget) {
-    exitRows += row("Fundamental target (context)", data.fundamentalTarget.toFixed(2), pct(data.fundamentalTarget, last));
+    exitRows += row("Fundamental target (context)", data.fundamentalTarget.toFixed(2), pct(data.fundamentalTarget, last), pct(data.fundamentalTarget, avgCost));
   }
 
   let entryBlock = "";
@@ -204,7 +203,7 @@ export function buildAnalysisCard(ticker, data, avgCost) {
 
     <p class="section-label">Exit ladder — what you hold</p>
     <table class="plan-table">
-      <thead><tr><th>Level</th><th class="num">Price</th><th class="num">vs today</th><th>Then move stop</th></tr></thead>
+      <thead><tr><th>Level</th><th class="num">Price</th><th class="num">vs today</th><th class="num">vs your cost</th><th>Then move stop</th></tr></thead>
       <tbody>${exitRows}</tbody>
     </table>
     ${entryBlock}
@@ -224,10 +223,13 @@ export function buildAnalysisCard(ticker, data, avgCost) {
   </div>`;
 }
 
+// base == null covers indices and positions without a complete share count
+// (see hasCompleteShareData) - there's no "your cost" to compare against.
 function pct(target, base) {
+  if (base == null) return "—";
   const p = (100 * (target - base)) / base;
   return `${p >= 0 ? "+" : ""}${p.toFixed(1)}%`;
 }
-function row(label, price, pctStr) {
-  return `<tr><td class="label">${label}</td><td class="num">${price}</td><td class="label num">${pctStr || ""}</td><td></td></tr>`;
+function row(label, price, pctToday, pctCost) {
+  return `<tr><td class="label">${label}</td><td class="num">${price}</td><td class="label num">${pctToday || ""}</td><td class="label num">${pctCost || ""}</td><td></td></tr>`;
 }
