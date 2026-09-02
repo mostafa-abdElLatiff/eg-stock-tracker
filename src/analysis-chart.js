@@ -187,6 +187,8 @@ export function buildAnalysisCard(ticker, data, avgCost) {
 
     ${data.why ? `<p class="section-label">Why these exact numbers (technical)</p><p class="body-text">${data.why}</p>` : ""}
 
+    ${data.ictNotes ? `<p class="section-label">ICT-style read (supplementary - see caveats)</p><p class="body-text">${data.ictNotes}</p>` : ""}
+
     ${
       data.finPosition || data.cashFlow || data.profitability || data.valuation || data.newsRecent
         ? `<p class="section-label">Fundamentals</p>
