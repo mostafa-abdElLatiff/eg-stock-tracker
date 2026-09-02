@@ -4,3 +4,4 @@ dist/
 .env.local
 *.local
 supabase/seed-my-data.sql
+CLAUDE.md
