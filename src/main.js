@@ -329,17 +329,22 @@ function renderMarketPrices() {
 }
 
 // (total invested) / (net shares) for a ticker, or null if any transaction
-// for it is missing a share count — same rule the Positions table uses, kept
-// as one source of truth rather than a second copy inside pasted analysis JSON.
-function avgCostFor(ticker) {
+// for it is missing a share count — same rule the Positions table uses,
+// preferred over anything in the pasted JSON so it can never drift out of
+// sync with real transactions. Falls back to chart_data.avgCostOverride
+// (clearly labeled as such in the UI) only when the live figure is
+// unavailable — e.g. an older transaction is missing its share count.
+function avgCostFor(ticker, fallback) {
   const txns = state.positions[ticker]?.transactions || [];
-  return hasCompleteShareData(txns) ? netInvested(txns) / netShares(txns) : null;
+  const live = hasCompleteShareData(txns) ? netInvested(txns) / netShares(txns) : null;
+  return { value: live ?? fallback ?? null, isLive: live != null };
 }
 
 function renderAnalysisNote(n) {
   if (n.chart_data && n.chart_data.closes) {
     try {
-      return buildAnalysisCard(n.ticker, n.chart_data, avgCostFor(n.ticker));
+      const avg = avgCostFor(n.ticker, n.chart_data.avgCostOverride);
+      return buildAnalysisCard(n.ticker, n.chart_data, avg.value, avg.isLive);
     } catch (e) {
       return `<div class="muted">${n.ticker}: couldn't render chart_data (${e.message}) — showing summary only.</div><p style="font-size:0.85rem">${n.summary}</p>`;
     }

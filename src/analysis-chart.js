@@ -109,10 +109,11 @@ export function buildChartSVG(data) {
   return svg;
 }
 
-// avgCost/units come from the Positions data (real transactions), not from the
-// pasted analysis JSON - keeps one source of truth instead of two copies that
-// can drift out of sync.
-export function buildAnalysisCard(ticker, data, avgCost) {
+// avgCost prefers the Positions data (real transactions) so it can't drift
+// out of sync - avgCostIsLive is false when it fell back to chart_data's
+// avgCostOverride instead (e.g. an older transaction is missing its share
+// count), in which case the UI says so rather than presenting it as live.
+export function buildAnalysisCard(ticker, data, avgCost, avgCostIsLive = true) {
   const last = data.closes[data.closes.length - 1];
   const sma5 = computeSMA(data.closes, 5);
   const sma10 = computeSMA(data.closes, 10);
@@ -130,7 +131,7 @@ export function buildAnalysisCard(ticker, data, avgCost) {
   const trailPct = 100 - sumPct;
 
   let exitRows = "";
-  if (avgCost != null) exitRows += row("Your avg cost (held)", avgCost.toFixed(2), "—", "—");
+  if (avgCost != null) exitRows += row(avgCostIsLive ? "Your avg cost (held)" : "Your avg cost (from notes, not live)", avgCost.toFixed(2), "—", "—");
   if (data.support != null) exitRows += row("Support", data.support.toFixed(2), pct(data.support, last), pct(data.support, avgCost));
   if (data.resistance != null) exitRows += row("Resistance", data.resistance.toFixed(2), pct(data.resistance, last), pct(data.resistance, avgCost));
   if (data.stop != null) {
