@@ -135,6 +135,9 @@ export function buildAnalysisCard(ticker, data, avgCost) {
   if (data.resistance != null) exitRows += row("Resistance", data.resistance.toFixed(2), pct(data.resistance, last), pct(data.resistance, avgCost));
   if (data.stop != null) {
     exitRows += row(data.trailing ? "Trailing stop (now)" : "Stop-loss (now)", data.stop.toFixed(2), pct(data.stop, last), pct(data.stop, avgCost));
+    if (data.stopNote) {
+      exitRows += `<tr><td colspan="5" style="font-size:0.76rem; color:var(--accent); padding-top:0; padding-bottom:8px">↳ ${data.stopNote}</td></tr>`;
+    }
   }
   plan.forEach((p, i) => {
     exitRows += `<tr><td class="label">Target ${i + 1} — sell ${p.sellPct}%</td><td class="num">${p.price.toFixed(2)}</td><td class="label num">${pct(p.price, last)}</td><td class="label num">${pct(p.price, avgCost)}</td><td class="label">stop → ${p.newStop.toFixed(2)}</td></tr>`;

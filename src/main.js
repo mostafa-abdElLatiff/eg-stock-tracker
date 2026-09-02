@@ -336,29 +336,46 @@ function avgCostFor(ticker) {
   return hasCompleteShareData(txns) ? netInvested(txns) / netShares(txns) : null;
 }
 
+function renderAnalysisNote(n) {
+  if (n.chart_data && n.chart_data.closes) {
+    try {
+      return buildAnalysisCard(n.ticker, n.chart_data, avgCostFor(n.ticker));
+    } catch (e) {
+      return `<div class="muted">${n.ticker}: couldn't render chart_data (${e.message}) — showing summary only.</div><p style="font-size:0.85rem">${n.summary}</p>`;
+    }
+  }
+  return `
+  <div style="margin-bottom:10px">
+    <strong class="tick">${n.ticker}</strong> <span class="muted">— refreshed ${new Date(n.refreshed_at).toLocaleDateString()}</span>
+    <p style="margin:4px 0 0; font-size:0.85rem">${n.summary}</p>
+  </div>`;
+}
+
 function renderAnalysisNotes() {
   if (!state.user) return "";
-  const rows = Object.values(state.analysisNotes)
-    .map((n) => {
-      if (n.chart_data && n.chart_data.closes) {
-        try {
-          return buildAnalysisCard(n.ticker, n.chart_data, avgCostFor(n.ticker));
-        } catch (e) {
-          return `<div class="muted">${n.ticker}: couldn't render chart_data (${e.message}) — showing summary only.</div><p style="font-size:0.85rem">${n.summary}</p>`;
-        }
-      }
-      return `
-      <div style="margin-bottom:10px">
-        <strong class="tick">${n.ticker}</strong> <span class="muted">— refreshed ${new Date(n.refreshed_at).toLocaleDateString()}</span>
-        <p style="margin:4px 0 0; font-size:0.85rem">${n.summary}</p>
-      </div>`;
-    })
-    .join("");
+  const all = Object.values(state.analysisNotes);
+  // Opportunities (candidates not currently held) get their own section, kept
+  // apart from things you actually hold or track (positions + indices/funds) -
+  // classified by an explicit `kind` on chart_data rather than guessed, so a
+  // plain-text note (no chart_data.kind at all) defaults to the holdings side.
+  const opportunities = all.filter((n) => n.chart_data?.kind === "opportunity");
+  const held = all.filter((n) => n.chart_data?.kind !== "opportunity");
+
+  const heldRows = held.map(renderAnalysisNote).join("");
+  const oppRows = opportunities.map(renderAnalysisNote).join("");
+
   return `
     <div class="card">
       <h2>AI analysis</h2>
-      <p class="card-note">Refreshed on request, not on a timer — ask Claude for a fresh technical read and paste the result below. Each ticker can be a plain string (quick text note) or an object with chart data (closes/highs/lows/support/resistance/stop/targets/pattern/rsi/...) for a full chart + exit ladder.</p>
-      ${rows || `<p class="muted">Nothing recorded yet.</p>`}
+      <p class="card-note">Refreshed on request, not on a timer — ask Claude for a fresh technical read and paste the result below. Each ticker can be a plain string (quick text note) or an object with chart data (closes/highs/lows/support/resistance/stop/targets/pattern/rsi/...) for a full chart + exit ladder. Add <code>"kind":"opportunity"</code> to a ticker's object to list it under Opportunities instead of your holdings.</p>
+      ${heldRows || `<p class="muted">Nothing recorded yet.</p>`}
+      ${
+        oppRows
+          ? `<h3 style="margin:20px 0 4px; font-size:0.95rem">Opportunities — not yet held</h3>
+      <p class="card-note">Candidates researched but not owned — screened the same way as everything above, just not in your portfolio.</p>
+      ${oppRows}`
+          : ""
+      }
       <details style="margin-top:10px">
         <summary style="cursor:pointer; font-size:0.85rem; color:var(--text-secondary)">Paste a refresh</summary>
         <p class="card-note" style="margin-top:8px">Expects JSON like <code>{"GOLD": "text summary...", "COMI": {"closes":[...],"highs":[...],"lows":[...],"support":135.35,"resistance":141,"stop":135,"targets":[141,180.53],"pattern":"...","rsi":39,"trendLabel":"Down","buyApproach":"...","why":"...","short":"...","medium":"...","long":"..."}}</code> — one key per ticker, string or object.</p>
