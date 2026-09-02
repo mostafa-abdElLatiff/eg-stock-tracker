@@ -170,6 +170,16 @@ export function buildAnalysisCard(ticker, data, avgCost, avgCostIsLive = true) {
       <span class="price">${last.toFixed(2)}</span>
     </div>
     <div class="muted" style="margin-bottom:8px">price is ${trendVsAvg}${data.lastUpdated ? ` · data through ${data.lastUpdated}` : ""}</div>
+    ${
+      data.orderSuggestion
+        ? `<div style="border:1px solid var(--good); border-radius:8px; padding:8px 10px; margin-bottom:10px; background:color-mix(in srgb, var(--good) 10%, transparent)">
+      <strong style="color:var(--good)">Open order suggestion:</strong> ${data.orderSuggestion.side === "sell" ? "Sell" : "Buy"} limit
+      ${data.orderSuggestion.limitPrice.toFixed(2)}, ${data.orderSuggestion.amount ? `${data.orderSuggestion.amount.toLocaleString()} EGP` : ""}
+      ${data.orderSuggestion.note ? `<div class="muted" style="margin-top:2px">${data.orderSuggestion.note}</div>` : ""}
+      ${data.orderSuggestion.asOf ? `<div class="muted" style="margin-top:2px; font-size:0.7rem">Suggested ${data.orderSuggestion.asOf} — not placed automatically, enter it yourself in Thndr.</div>` : ""}
+    </div>`
+        : ""
+    }
     ${data.dailyFlag ? `<p class="body-text" style="border-left:2px solid var(--accent);padding-left:8px;margin-bottom:10px"><strong>Latest session:</strong> ${data.dailyFlag}</p>` : ""}
     ${buildChartSVG(data)}
     <div class="chart-legend">
