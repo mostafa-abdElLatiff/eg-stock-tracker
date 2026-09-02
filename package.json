@@ -7,7 +7,8 @@
     "dev": "vite",
     "build": "vite build",
     "preview": "vite preview",
-    "refresh-prices": "node scripts/refresh-prices.mjs"
+    "refresh-prices": "node scripts/refresh-prices.mjs",
+    "update-analysis": "node scripts/update-analysis.mjs"
   },
   "dependencies": {
     "@supabase/supabase-js": "^2.45.0"
