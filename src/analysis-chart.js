@@ -216,14 +216,18 @@ export function buildAnalysisCard(ticker, data, avgCost, avgCostIsLive = true) {
     ${data.ictNotes ? `<p class="section-label">ICT-style read (supplementary - see caveats)</p><p class="body-text">${data.ictNotes}</p>` : ""}
 
     ${
-      data.finPosition || data.cashFlow || data.profitability || data.valuation || data.newsRecent
+      data.finPosition || data.cashFlow || data.profitability || data.valuation || data.newsRecent || data.qualityOfEarnings || data.capexTrend || data.dividendInfo || data.ownershipInfo
         ? `<p class="section-label">Fundamentals</p>
     <table class="plan-table">
       <tbody>
         ${data.finPosition ? `<tr><td class="label" style="vertical-align:top">Financial position</td><td colspan="3" style="text-align:left">${data.finPosition}</td></tr>` : ""}
         ${data.cashFlow ? `<tr><td class="label" style="vertical-align:top">Cash flow</td><td colspan="3" style="text-align:left">${data.cashFlow}</td></tr>` : ""}
+        ${data.qualityOfEarnings ? `<tr><td class="label" style="vertical-align:top">Quality of earnings</td><td colspan="3" style="text-align:left">${data.qualityOfEarnings}</td></tr>` : ""}
         ${data.profitability ? `<tr><td class="label" style="vertical-align:top">Profitability trend</td><td colspan="3" style="text-align:left">${data.profitability}</td></tr>` : ""}
+        ${data.capexTrend ? `<tr><td class="label" style="vertical-align:top">CapEx trend</td><td colspan="3" style="text-align:left">${data.capexTrend}</td></tr>` : ""}
         ${data.valuation ? `<tr><td class="label" style="vertical-align:top">Valuation</td><td colspan="3" style="text-align:left">${data.valuation}</td></tr>` : ""}
+        ${data.dividendInfo ? `<tr><td class="label" style="vertical-align:top">Dividend</td><td colspan="3" style="text-align:left">${data.dividendInfo}</td></tr>` : ""}
+        ${data.ownershipInfo ? `<tr><td class="label" style="vertical-align:top">Ownership</td><td colspan="3" style="text-align:left">${data.ownershipInfo}</td></tr>` : ""}
         ${data.newsRecent ? `<tr><td class="label" style="vertical-align:top">Recent news/results</td><td colspan="3" style="text-align:left">${data.newsRecent}</td></tr>` : ""}
       </tbody>
     </table>`
