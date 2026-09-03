@@ -171,6 +171,17 @@ export function buildAnalysisCard(ticker, data, avgCost, avgCostIsLive = true) {
     </div>
     <div class="muted" style="margin-bottom:8px">price is ${trendVsAvg}${data.lastUpdated ? ` · data through ${data.lastUpdated}` : ""}</div>
     ${
+      data.actionNeeded
+        ? `<div style="border:1px solid var(--bad); border-radius:8px; padding:8px 10px; margin-bottom:10px; background:color-mix(in srgb, var(--bad) 10%, transparent)">
+      <strong style="color:var(--bad)">Action needed:</strong> ${data.actionNeeded}
+    </div>`
+        : data.planStatus
+        ? `<div style="border:1px solid var(--border); border-radius:8px; padding:8px 10px; margin-bottom:10px">
+      <strong>Plan status:</strong> ${data.planStatus}
+    </div>`
+        : ""
+    }
+    ${
       data.orderSuggestion
         ? `<div style="border:1px solid var(--good); border-radius:8px; padding:8px 10px; margin-bottom:10px; background:color-mix(in srgb, var(--good) 10%, transparent)">
       <strong style="color:var(--good)">Open order suggestion:</strong> ${data.orderSuggestion.side === "sell" ? "Sell" : "Buy"} limit
