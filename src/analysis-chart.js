@@ -167,6 +167,7 @@ export function buildAnalysisCard(ticker, data, avgCost, avgCostIsLive = true) {
   <div class="analysis-card">
     <div class="analysis-head">
       <span class="tick">${ticker}</span>
+      ${data.verdictScore != null ? `<span class="pill">score ${data.verdictScore}/100</span>` : ""}
       <span class="price">${last.toFixed(2)}</span>
     </div>
     <div class="muted" style="margin-bottom:8px">price is ${trendVsAvg}${data.lastUpdated ? ` · data through ${data.lastUpdated}` : ""}</div>

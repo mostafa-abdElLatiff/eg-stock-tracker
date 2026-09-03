@@ -366,6 +366,11 @@ function renderAnalysisNotes() {
   const opportunities = all.filter((n) => n.chart_data?.kind === "opportunity");
   const held = all.filter((n) => n.chart_data?.kind !== "opportunity");
 
+  // Best-to-worst by verdictScore (0-100, higher = more attractive right
+  // now) - unscored entries (or plain-text notes) sort last rather than
+  // crashing the comparison.
+  opportunities.sort((a, b) => (b.chart_data?.verdictScore ?? -1) - (a.chart_data?.verdictScore ?? -1));
+
   const heldRows = held.map(renderAnalysisNote).join("");
   const oppRows = opportunities.map(renderAnalysisNote).join("");
 
