@@ -1,13 +1,126 @@
 // Renders the technical-analysis chart (HLC bars + volume + support/resistance/
 // stop/target lines) and the exit-ladder plan for a single ticker's analysis_notes
-// row. Ported from the trade-plan.html Artifact's buildChart()/targetPlan() -
-// same math, same fixed Y-scale (targets never distort the price scale - see
-// the comment below), just reading from chart_data instead of a hardcoded array.
+// row. The chart itself is a real financial-charting library (lightweight-charts,
+// the same engine TradingView's own embeds use) instead of a hand-rolled SVG -
+// the old approach had labels overlapping and was genuinely hard to read. A
+// library handles price-axis layout, non-overlapping labels, and zoom/crosshair
+// correctly instead of me re-deriving that logic by hand.
+
+import { createChart, ColorType, BarSeries, LineSeries, HistogramSeries } from "lightweight-charts";
 
 export function computeSMA(arr, n) {
   if (arr.length < n) return null;
   const slice = arr.slice(-n);
   return slice.reduce((a, b) => a + b, 0) / n;
+}
+
+// chart_data stores closes/highs/lows as plain arrays with no per-point date -
+// only the END date (lastUpdated) is real. Reconstruct the real EGX trading-day
+// sequence (Sun-Thu, no Fri/Sat) working backward from that known real date, so
+// the x-axis shows genuine calendar dates rather than an arbitrary index. This
+// is a labeling reconstruction, not fabricated price data - the actual OHLC
+// values are untouched, only which calendar date each one is plotted under.
+function reconstructDates(n, endDateStr) {
+  const dates = [];
+  let d = endDateStr ? new Date(endDateStr + "T00:00:00Z") : new Date();
+  while (dates.length < n) {
+    const day = d.getUTCDay(); // 0=Sun ... 6=Sat, EGX trades Sun-Thu
+    if (day !== 5 && day !== 6) dates.unshift(d.toISOString().slice(0, 10));
+    d = new Date(d.getTime() - 86400000);
+  }
+  return dates;
+}
+
+// Mounts a real interactive chart into `container` (a plain <div>) for one
+// ticker's chart_data. Returns the chart instance so the caller can call
+// .remove() on it before the next re-render (otherwise old chart instances
+// leak - lightweight-charts doesn't garbage-collect itself when its DOM node
+// is discarded from innerHTML).
+export function mountChart(container, data) {
+  const closes = data.closes, highs = data.highs || closes, lows = data.lows || closes;
+  const n = closes.length;
+  const dates = reconstructDates(n, data.lastUpdated);
+
+  const styles = getComputedStyle(document.documentElement);
+  const tok = (name) => styles.getPropertyValue(name).trim();
+  const good = tok("--good") || "#0ca30c", bad = tok("--bad") || "#d95926";
+  const ink = tok("--text-primary") || "#fff", muted = tok("--text-muted") || "#898781";
+  const grid = tok("--gridline") || "#2c2c2a", support = tok("--support") || "#5b9bd5";
+  const resistance = tok("--resistance") || "#e0a458", sma = tok("--sma") || "#6b6a63";
+  const accent = tok("--accent") || "#3987e5";
+
+  const chart = createChart(container, {
+    autoSize: true,
+    layout: { background: { type: ColorType.Solid, color: "transparent" }, textColor: muted, fontSize: 11 },
+    grid: { vertLines: { color: grid }, horzLines: { color: grid } },
+    rightPriceScale: { borderColor: grid },
+    timeScale: { borderColor: grid, timeVisible: false },
+    crosshair: { mode: 0 },
+  });
+
+  // The price scale only auto-fits the series' own bar data by default, so a
+  // resistance/target level sitting above the recent high (the normal case -
+  // targets are usually above the current price) gets drawn outside the
+  // visible pane with no label at all, not just a crowded one. Extend the
+  // autoscale range to include every support/resistance/stop/target level.
+  const levels = [data.support, data.resistance, data.stop, ...(data.targets || [])].filter((v) => v != null);
+  const barSeries = chart.addSeries(BarSeries, {
+    upColor: good, downColor: bad, thinBars: false,
+    priceFormat: { type: "price", precision: 2, minMove: 0.01 },
+    autoscaleInfoProvider: (original) => {
+      const res = original();
+      if (!res || !levels.length) return res;
+      const lo = Math.min(res.priceRange.minValue, ...levels);
+      const hi = Math.max(res.priceRange.maxValue, ...levels);
+      return { ...res, priceRange: { minValue: lo, maxValue: hi } };
+    },
+  });
+  // open = close is intentional, not a data gap papered over: this project
+  // deliberately never recorded Open (it was less reliably sourced than
+  // High/Low/Close), so open=close collapses the bar's left (open) tick to
+  // nothing, leaving exactly the honest high-low-close bar this data supports.
+  barSeries.setData(closes.map((c, i) => ({ time: dates[i], open: c, high: highs[i], low: lows[i], close: c })));
+
+  const sma10 = closes.map((_, i) => (i < 9 ? null : computeSMA(closes.slice(0, i + 1), 10)));
+  const smaPoints = sma10.map((v, i) => (v == null ? null : { time: dates[i], value: v })).filter(Boolean);
+  if (smaPoints.length) {
+    const smaSeries = chart.addSeries(LineSeries, { color: sma, lineWidth: 1, lineStyle: 2, title: "10-day avg", priceLineVisible: false, lastValueVisible: false });
+    smaSeries.setData(smaPoints);
+  }
+
+  if (data.volumes && data.volumes.some((v) => v != null)) {
+    const volSeries = chart.addSeries(HistogramSeries, {
+      priceFormat: { type: "volume" },
+      priceScaleId: "vol",
+    });
+    chart.priceScale("vol").applyOptions({ scaleMargins: { top: 0.82, bottom: 0 } });
+    volSeries.setData(
+      data.volumes.map((v, i) => ({ time: dates[i], value: v ?? 0, color: (i === 0 || closes[i] >= closes[i - 1] ? good : bad) + "88" }))
+    );
+  }
+
+  // Price-line labels don't auto-avoid each other - when two real levels sit
+  // within ~0.4% of one another (e.g. a target that IS the resistance level,
+  // a common, intentional pattern - "clearing resistance = target 1"), merge
+  // them into one labeled line instead of drawing two that visually collide.
+  const placed = []; // {price, line}
+  const priceLine = (price, color, title, dashed) => {
+    const near = placed.find((p) => Math.abs(p.price - price) / price < 0.004);
+    if (near) {
+      near.line.applyOptions({ title: `${near.title} / ${title}` });
+      near.title = `${near.title} / ${title}`;
+      return;
+    }
+    const line = barSeries.createPriceLine({ price, color, lineWidth: dashed ? 1 : 2, lineStyle: dashed ? 2 : 0, axisLabelVisible: true, title });
+    placed.push({ price, line, title });
+  };
+  if (data.support != null) priceLine(data.support, support, "Support", true);
+  if (data.resistance != null) priceLine(data.resistance, resistance, "Resistance", true);
+  if (data.stop != null) priceLine(data.stop, bad, data.trailing ? "Trailing stop" : "Stop-loss", false);
+  (data.targets || []).forEach((t, idx) => priceLine(t, good, `T${idx + 1}`, true));
+
+  chart.timeScale().fitContent();
+  return chart;
 }
 
 // Splits each target into a partial-sell % and where the stop moves to once
@@ -25,89 +138,6 @@ export function targetPlan(data, avgCost) {
   }));
 }
 
-export function buildChartSVG(data) {
-  const w = 460, priceH = 170, volH = data.volumes ? 46 : 0, gap = data.volumes ? 8 : 0;
-  const padL = 4, padR = 58, padT = 14, padB = 4;
-  const h = priceH + gap + volH;
-  const closes = data.closes, highs = data.highs || closes, lows = data.lows || closes;
-
-  // Price scale comes ONLY from real near-term price action (highs/lows/support/
-  // resistance/stop) - NOT from far-off targets, which would otherwise crush the
-  // actual candles into an unreadable sliver at the bottom of the chart.
-  const scaleVals = highs.concat(lows);
-  if (data.support != null) scaleVals.push(data.support);
-  if (data.resistance != null) scaleVals.push(data.resistance);
-  if (data.stop != null) scaleVals.push(data.stop);
-  const min = Math.min(...scaleVals), max = Math.max(...scaleVals);
-  const pad = (max - min) * 0.08 || max * 0.02;
-  const scaleMin = min - pad, scaleMax = max + pad;
-  const range = scaleMax - scaleMin || 1;
-  const n = closes.length;
-  const barW = (w - padL - padR) / n;
-  const x = (i) => padL + i * barW + barW / 2;
-  const y = (v) => padT + (1 - (v - scaleMin) / range) * (priceH - padT - padB);
-  const clip = (v) => Math.max(padT, Math.min(priceH - padB, y(v)));
-
-  const sma10Vals = closes.map((_, i) => (i < 9 ? null : computeSMA(closes.slice(0, i + 1), 10)));
-  let smaPath = "";
-  sma10Vals.forEach((v, i) => {
-    if (v === null) return;
-    smaPath += `${smaPath === "" ? "M" : "L"} ${x(i).toFixed(1)} ${y(v).toFixed(1)} `;
-  });
-
-  let svg = `<svg class="chart" viewBox="0 0 ${w} ${h}" preserveAspectRatio="none">`;
-
-  if (data.support != null) {
-    svg += `<line x1="${padL}" y1="${y(data.support).toFixed(1)}" x2="${w - padR}" y2="${y(data.support).toFixed(1)}" stroke="var(--support)" stroke-width="1.3" stroke-dasharray="4 3" />`;
-    svg += `<text x="${w - padR + 6}" y="${y(data.support).toFixed(1)}" fill="var(--support)" font-size="9.5" dominant-baseline="middle">${data.support.toFixed(2)}</text>`;
-  }
-  if (data.resistance != null) {
-    svg += `<line x1="${padL}" y1="${y(data.resistance).toFixed(1)}" x2="${w - padR}" y2="${y(data.resistance).toFixed(1)}" stroke="var(--resistance)" stroke-width="1.3" stroke-dasharray="4 3" />`;
-    svg += `<text x="${w - padR + 6}" y="${y(data.resistance).toFixed(1)}" fill="var(--resistance)" font-size="9.5" dominant-baseline="middle">${data.resistance.toFixed(2)}</text>`;
-  }
-  if (data.stop != null) {
-    svg += `<line x1="${padL}" y1="${y(data.stop).toFixed(1)}" x2="${w - padR}" y2="${y(data.stop).toFixed(1)}" stroke="var(--bad)" stroke-width="1.5" />`;
-    svg += `<text x="${w - padR + 6}" y="${y(data.stop).toFixed(1)}" fill="var(--bad)" font-size="9.5" font-weight="700" dominant-baseline="middle">${data.stop.toFixed(2)}</text>`;
-  }
-  (data.targets || []).forEach((t, idx) => {
-    const trueY = y(t), ty = clip(t);
-    const offscreen = trueY < padT;
-    svg += `<line x1="${padL}" y1="${ty.toFixed(1)}" x2="${w - padR}" y2="${ty.toFixed(1)}" stroke="var(--good)" stroke-width="1" stroke-dasharray="1 3" opacity="${offscreen ? 0.5 : 0.7}" />`;
-    svg += `<text x="${w - padR + 6}" y="${ty.toFixed(1)}" fill="var(--good)" font-size="9.5" dominant-baseline="middle">${offscreen ? "↑ " : ""}T${idx + 1} ${t.toFixed(2)}</text>`;
-  });
-
-  svg += `<path d="${smaPath}" fill="none" stroke="var(--sma)" stroke-width="1.2" stroke-dasharray="2 2" />`;
-
-  closes.forEach((c, i) => {
-    const cx = x(i);
-    const up = i === 0 ? true : c >= closes[i - 1];
-    const color = up ? "var(--good)" : "var(--bad)";
-    svg += `<line x1="${cx.toFixed(1)}" y1="${y(highs[i]).toFixed(1)}" x2="${cx.toFixed(1)}" y2="${y(lows[i]).toFixed(1)}" stroke="${color}" stroke-width="2" opacity="0.9" />`;
-    svg += `<line x1="${cx.toFixed(1)}" y1="${y(c).toFixed(1)}" x2="${(cx + barW * 0.36).toFixed(1)}" y2="${y(c).toFixed(1)}" stroke="${color}" stroke-width="2" opacity="0.9" />`;
-  });
-
-  const lastX = x(n - 1), lastY = y(closes[n - 1]);
-  svg += `<line x1="${lastX.toFixed(1)}" y1="${lastY.toFixed(1)}" x2="${w - padR}" y2="${lastY.toFixed(1)}" stroke="var(--accent)" stroke-width="1" stroke-dasharray="1 2" opacity="0.6" />`;
-  svg += `<circle cx="${lastX.toFixed(1)}" cy="${lastY.toFixed(1)}" r="3.6" fill="var(--accent)" />`;
-  svg += `<text x="${w - padR + 6}" y="${lastY.toFixed(1)}" fill="var(--accent)" font-size="10" font-weight="700" dominant-baseline="middle">${closes[n - 1].toFixed(2)}</text>`;
-
-  if (data.volumes) {
-    const volTop = priceH + gap;
-    const volMax = Math.max(...data.volumes) || 1;
-    const vy = (v) => volTop + (1 - v / volMax) * volH;
-    svg += `<line x1="${padL}" y1="${volTop.toFixed(1)}" x2="${w - padR}" y2="${volTop.toFixed(1)}" stroke="var(--border)" stroke-width="1" />`;
-    data.volumes.forEach((v, i) => {
-      const cx = x(i);
-      const up = i === 0 ? true : closes[i] >= closes[i - 1];
-      const color = up ? "var(--good)" : "var(--bad)";
-      svg += `<rect x="${(cx - barW * 0.34).toFixed(1)}" y="${vy(v).toFixed(1)}" width="${(barW * 0.68).toFixed(1)}" height="${(volTop + volH - vy(v)).toFixed(1)}" fill="${color}" opacity="0.55" />`;
-    });
-    svg += `<text x="${w - padR + 6}" y="${(volTop + 8).toFixed(1)}" fill="var(--text-muted)" font-size="8.5">vol</text>`;
-  }
-
-  svg += `</svg>`;
-  return svg;
-}
 
 // avgCost prefers the Positions data (real transactions) so it can't drift
 // out of sync - avgCostIsLive is false when it fell back to chart_data's
@@ -193,13 +223,8 @@ export function buildAnalysisCard(ticker, data, avgCost, avgCostIsLive = true) {
         : ""
     }
     ${data.dailyFlag ? `<p class="body-text" style="border-left:2px solid var(--accent);padding-left:8px;margin-bottom:10px"><strong>Latest session:</strong> ${data.dailyFlag}</p>` : ""}
-    ${buildChartSVG(data)}
-    <div class="chart-legend">
-      <span><i style="background:var(--text-primary)"></i>Close</span>
-      <span><i style="background:var(--sma)"></i>10-day avg</span>
-      <span><i style="background:var(--support)"></i>Support</span>
-      <span><i style="background:var(--resistance)"></i>Resistance</span>
-    </div>
+    <div class="chart" id="chart-${ticker}" data-chart-ticker="${ticker}"></div>
+    <p class="muted" style="margin:2px 0 8px">Drag to pan, scroll/pinch to zoom. Support/resistance/stop/target levels are labeled directly on the price axis.</p>
 
     <p class="section-label">Pattern observed</p>
     <p class="body-text"><strong>${data.patternLabel || ""}</strong>${data.patternLabel ? " — " : ""}${data.pattern || ""}</p>

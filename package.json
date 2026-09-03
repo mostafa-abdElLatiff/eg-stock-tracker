@@ -11,7 +11,8 @@
     "update-analysis": "node scripts/update-analysis.mjs"
   },
   "dependencies": {
-    "@supabase/supabase-js": "^2.45.0"
+    "@supabase/supabase-js": "^2.45.0",
+    "lightweight-charts": "^5.2.1"
   },
   "devDependencies": {
     "vite": "^5.4.0"

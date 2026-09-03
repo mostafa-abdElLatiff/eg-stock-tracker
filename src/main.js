@@ -2,7 +2,7 @@ import { supabase, hasSupabaseConfig } from "./supabase.js";
 import * as store from "./storage.js";
 import { summarizePositions, suggestSplit, netShares, netInvested, hasCompleteShareData } from "./portfolio.js";
 import { estimateValue, CLOUDS_ANNUAL_RATE } from "./estimate.js";
-import { buildAnalysisCard } from "./analysis-chart.js";
+import { buildAnalysisCard, mountChart } from "./analysis-chart.js";
 
 const REFRESH_SCHEDULE_NOTE =
   "10:00, 13:00 and 15:00 Cairo time, Sunday–Thursday (EGX trading days). Fund NAVs (BAL/BMM/BRE) only actually change once a day regardless of how often this runs — funds are priced end-of-day, not intraday.";
@@ -59,6 +59,33 @@ function estimatedPositions() {
   return { effective, estimates };
 }
 
+// Real chart instances (lightweight-charts), keyed by ticker - a plain
+// innerHTML re-render discards their DOM nodes without telling the library,
+// so they must be explicitly .remove()'d before mounting new ones each
+// render or they leak (and pile up invisible redraw work) on every action.
+let activeCharts = {};
+
+function mountCharts() {
+  for (const chart of Object.values(activeCharts)) {
+    try {
+      chart.remove();
+    } catch {
+      // already gone - fine
+    }
+  }
+  activeCharts = {};
+  document.querySelectorAll("[data-chart-ticker]").forEach((el) => {
+    const ticker = el.dataset.chartTicker;
+    const chartData = state.analysisNotes[ticker]?.chart_data;
+    if (!chartData || !chartData.closes) return;
+    try {
+      activeCharts[ticker] = mountChart(el, chartData);
+    } catch (e) {
+      el.innerHTML = `<p class="muted">Chart failed to load: ${e.message}</p>`;
+    }
+  });
+}
+
 function render() {
   const { effective, estimates } = estimatedPositions();
   const summary = summarizePositions(effective, state.targets);
@@ -81,6 +108,7 @@ function render() {
     </div>
   `;
   wireEvents();
+  mountCharts();
 }
 
 function renderHeader() {
