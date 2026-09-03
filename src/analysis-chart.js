@@ -6,7 +6,7 @@
 // library handles price-axis layout, non-overlapping labels, and zoom/crosshair
 // correctly instead of me re-deriving that logic by hand.
 
-import { createChart, ColorType, BarSeries, LineSeries, HistogramSeries } from "lightweight-charts";
+import { createChart, ColorType, AreaSeries, LineSeries } from "lightweight-charts";
 
 export function computeSMA(arr, n) {
   if (arr.length < n) return null;
@@ -37,17 +37,16 @@ function reconstructDates(n, endDateStr) {
 // leak - lightweight-charts doesn't garbage-collect itself when its DOM node
 // is discarded from innerHTML).
 export function mountChart(container, data) {
-  const closes = data.closes, highs = data.highs || closes, lows = data.lows || closes;
+  const closes = data.closes;
   const n = closes.length;
   const dates = reconstructDates(n, data.lastUpdated);
 
   const styles = getComputedStyle(document.documentElement);
   const tok = (name) => styles.getPropertyValue(name).trim();
   const good = tok("--good") || "#0ca30c", bad = tok("--bad") || "#d95926";
-  const ink = tok("--text-primary") || "#fff", muted = tok("--text-muted") || "#898781";
+  const muted = tok("--text-muted") || "#898781";
   const grid = tok("--gridline") || "#2c2c2a", support = tok("--support") || "#5b9bd5";
   const resistance = tok("--resistance") || "#e0a458", sma = tok("--sma") || "#6b6a63";
-  const accent = tok("--accent") || "#3987e5";
 
   const chart = createChart(container, {
     autoSize: true,
@@ -58,14 +57,23 @@ export function mountChart(container, data) {
     crosshair: { mode: 0 },
   });
 
-  // The price scale only auto-fits the series' own bar data by default, so a
+  // A plain area/line series (just the close, one continuous line) reads far
+  // more clearly than an OHLC bar chart at a glance - this project has no
+  // reliable Open data anyway, so a bar chart's main advantage (seeing each
+  // day's open-to-close direction) never applied here. Color the line by the
+  // net move over the visible window so "is this stock up or down this
+  // month" is visible instantly.
+  const trendColor = closes[closes.length - 1] >= closes[0] ? good : bad;
+
+  // The price scale only auto-fits the series' own data by default, so a
   // resistance/target level sitting above the recent high (the normal case -
   // targets are usually above the current price) gets drawn outside the
   // visible pane with no label at all, not just a crowded one. Extend the
   // autoscale range to include every support/resistance/stop/target level.
   const levels = [data.support, data.resistance, data.stop, ...(data.targets || [])].filter((v) => v != null);
-  const barSeries = chart.addSeries(BarSeries, {
-    upColor: good, downColor: bad, thinBars: false,
+  const priceSeries = chart.addSeries(AreaSeries, {
+    lineColor: trendColor, lineWidth: 2,
+    topColor: trendColor + "33", bottomColor: trendColor + "00",
     priceFormat: { type: "price", precision: 2, minMove: 0.01 },
     autoscaleInfoProvider: (original) => {
       const res = original();
@@ -75,28 +83,13 @@ export function mountChart(container, data) {
       return { ...res, priceRange: { minValue: lo, maxValue: hi } };
     },
   });
-  // open = close is intentional, not a data gap papered over: this project
-  // deliberately never recorded Open (it was less reliably sourced than
-  // High/Low/Close), so open=close collapses the bar's left (open) tick to
-  // nothing, leaving exactly the honest high-low-close bar this data supports.
-  barSeries.setData(closes.map((c, i) => ({ time: dates[i], open: c, high: highs[i], low: lows[i], close: c })));
+  priceSeries.setData(closes.map((c, i) => ({ time: dates[i], value: c })));
 
   const sma10 = closes.map((_, i) => (i < 9 ? null : computeSMA(closes.slice(0, i + 1), 10)));
   const smaPoints = sma10.map((v, i) => (v == null ? null : { time: dates[i], value: v })).filter(Boolean);
   if (smaPoints.length) {
     const smaSeries = chart.addSeries(LineSeries, { color: sma, lineWidth: 1, lineStyle: 2, title: "10-day avg", priceLineVisible: false, lastValueVisible: false });
     smaSeries.setData(smaPoints);
-  }
-
-  if (data.volumes && data.volumes.some((v) => v != null)) {
-    const volSeries = chart.addSeries(HistogramSeries, {
-      priceFormat: { type: "volume" },
-      priceScaleId: "vol",
-    });
-    chart.priceScale("vol").applyOptions({ scaleMargins: { top: 0.82, bottom: 0 } });
-    volSeries.setData(
-      data.volumes.map((v, i) => ({ time: dates[i], value: v ?? 0, color: (i === 0 || closes[i] >= closes[i - 1] ? good : bad) + "88" }))
-    );
   }
 
   // Price-line labels don't auto-avoid each other - when two real levels sit
@@ -111,7 +104,7 @@ export function mountChart(container, data) {
       near.title = `${near.title} / ${title}`;
       return;
     }
-    const line = barSeries.createPriceLine({ price, color, lineWidth: dashed ? 1 : 2, lineStyle: dashed ? 2 : 0, axisLabelVisible: true, title });
+    const line = priceSeries.createPriceLine({ price, color, lineWidth: dashed ? 1 : 2, lineStyle: dashed ? 2 : 0, axisLabelVisible: true, title });
     placed.push({ price, line, title });
   };
   if (data.support != null) priceLine(data.support, support, "Support", true);
@@ -138,6 +131,37 @@ export function targetPlan(data, avgCost) {
   }));
 }
 
+
+// A one-time reference block, not per-card - the fundamental/technical
+// indicators used across every ticker's card mean the same thing everywhere,
+// so this is written once and rendered collapsed above the analysis cards
+// rather than repeated 20+ times.
+export function buildFundamentalsGlossary() {
+  const terms = [
+    ["P/E (Price-to-Earnings)", "Share price divided by annual earnings per share. Roughly: how many years of current profit it'd take to earn back the price you paid. Lower usually means cheaper, but only means anything next to the sector average - a low P/E bank and a low P/E tech stock aren't directly comparable."],
+    ["PEG (P/E ÷ growth rate)", "Takes the P/E and divides it by the company's earnings growth rate, so a stock that looks expensive on P/E alone can still look cheap if it's growing fast enough. Rule of thumb: under 1 is cheap for its growth, over 2 is expensive for its growth. Needs a real growth-rate figure to compute - flagged as unavailable when one can't be sourced, rather than guessed."],
+    ["ROE (Return on Equity)", "Net income divided by shareholder equity - how much profit the company generates from the money shareholders have put in. Higher is generally better, but very high ROE can also mean high debt doing the work (see Debt/Equity below), not just efficient operations."],
+    ["Debt/Equity", "Total debt divided by shareholder equity. Higher means more of the company is funded by borrowing rather than owners' capital - more fragile in a downturn, but not automatically bad (banks structurally run high D/E; it's the trend and the sector norm that matter more than the raw number)."],
+    ["Current Ratio / Quick Ratio", "Both measure whether a company can cover its near-term bills. Current Ratio = current assets ÷ current liabilities. Quick Ratio does the same but excludes inventory, since inventory isn't always quick to turn into cash - a stricter test. Think of both as \"financial flexibility to make decisions,\" not just \"can it avoid bankruptcy.\""],
+    ["Free Cash Flow (FCF)", "Cash left over from operations after paying for the capital spending (CapEx) needed to run the business. This is real cash, harder to dress up than reported accounting profit. Negative FCF for several years running - even with a healthy reported profit - is a real warning sign: it means growth or dividends are being funded by debt or share issuance, not the business itself."],
+    ["Quality of earnings", "Is profit growth coming from the actual core business, or from one-off items - selling an asset, a non-cash revaluation gain, or interest income sitting on a big cash pile? A company can show rising headline profit purely from interest income while the underlying business goes nowhere. This project always tries to separate the two before trusting a profitability number."],
+    ["CapEx trend (5-year)", "Is capital spending increasing, flat, or declining, and is there a real, named forward project pipeline behind it? Between two similarly-priced stocks, the one actually investing in future capacity is the stronger long-term hold, all else equal."],
+    ["Dividend yield / history", "Annual dividend per share as a % of the current price, plus whether that payment has been growing, flat, or cut over recent years. A rising, sustained dividend is a real signal of financial health; a high yield propped up by a shrinking or erratic payout is not the same thing."],
+    ["Shareholder equity / book value trend", "Is the company's retained, owned capital actually growing period over period? Growing equity means real value is being built and kept in the business, not just paid out or eroded by losses."],
+    ["Ownership / insider concentration", "How much of the company a small number of large shareholders control. Cuts both ways: high concentration can mean real skin in the game from people who know the business best, or it can mean a thin free float with weak liquidity - context (who the holder is) matters more than the raw %."],
+    ["RSI-14 (Relative Strength Index)", "A 0-100 momentum gauge computed from the last 14 sessions' up-days vs. down-days. Above ~70 usually means recently overbought (extended, due for a pause or pullback); below ~30 usually means recently oversold. This project's entry screen generally wants RSI in the 40-65 zone - not chasing a name that's already run hot."],
+    ["Verdict score (Opportunities only)", "A 0-100 score, this project's own composite of \"how attractive is this as an entry RIGHT NOW\" - not \"how good is the company.\" Rough bands: 90+ act-now/clean entry, 60-89 passes the screens but no catalyst yet (or a real caveat), 30-59 wait for confirmation, under 30 avoid. Opportunities are sorted by this score, best first."],
+  ];
+  const rows = terms
+    .map(([term, def]) => `<div style="margin-bottom:10px"><strong>${term}</strong><p class="body-text" style="margin:2px 0 0">${def}</p></div>`)
+    .join("");
+  return `
+    <details style="margin:10px 0 18px">
+      <summary style="cursor:pointer; font-size:0.85rem; color:var(--text-secondary)">What do these numbers mean? (fundamentals + technical glossary)</summary>
+      <div style="margin-top:10px">${rows}</div>
+    </details>
+  `;
+}
 
 // avgCost prefers the Positions data (real transactions) so it can't drift
 // out of sync - avgCostIsLive is false when it fell back to chart_data's

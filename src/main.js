@@ -2,7 +2,7 @@ import { supabase, hasSupabaseConfig } from "./supabase.js";
 import * as store from "./storage.js";
 import { summarizePositions, suggestSplit, netShares, netInvested, hasCompleteShareData } from "./portfolio.js";
 import { estimateValue, CLOUDS_ANNUAL_RATE } from "./estimate.js";
-import { buildAnalysisCard, mountChart } from "./analysis-chart.js";
+import { buildAnalysisCard, buildFundamentalsGlossary, mountChart } from "./analysis-chart.js";
 
 const REFRESH_SCHEDULE_NOTE =
   "10:00, 13:00 and 15:00 Cairo time, Sunday–Thursday (EGX trading days). Fund NAVs (BAL/BMM/BRE) only actually change once a day regardless of how often this runs — funds are priced end-of-day, not intraday.";
@@ -406,6 +406,7 @@ function renderAnalysisNotes() {
     <div class="card">
       <h2>AI analysis</h2>
       <p class="card-note">Refreshed on request, not on a timer — ask Claude for a fresh technical read and paste the result below. Each ticker can be a plain string (quick text note) or an object with chart data (closes/highs/lows/support/resistance/stop/targets/pattern/rsi/...) for a full chart + exit ladder. Add <code>"kind":"opportunity"</code> to a ticker's object to list it under Opportunities instead of your holdings.</p>
+      ${buildFundamentalsGlossary()}
       ${heldRows || `<p class="muted">Nothing recorded yet.</p>`}
       ${
         oppRows
