@@ -399,6 +399,29 @@ function renderAnalysisNotes() {
   // crashing the comparison.
   opportunities.sort((a, b) => (b.chart_data?.verdictScore ?? -1) - (a.chart_data?.verdictScore ?? -1));
 
+  // Held stocks sort by urgency instead - a real actionNeeded item outranks
+  // everything (something to actually go do), then a price sitting close to
+  // its stop/target (about to become actionable even before actionNeeded is
+  // written down) comes next, closest-first. Everything else keeps a stable
+  // order rather than being shuffled for no reason.
+  const urgencyOf = (n) => {
+    const d = n.chart_data;
+    if (!d) return [0, 0];
+    if (d.actionNeeded) return [2, 0];
+    const last = d.closes?.[d.closes.length - 1];
+    const levels = [d.stop, ...(d.targets || [])].filter((v) => v != null);
+    if (last != null && levels.length) {
+      const minDistPct = Math.min(...levels.map((l) => Math.abs(l - last) / last)) * 100;
+      if (minDistPct < 3) return [1, -minDistPct]; // closer first within this tier
+    }
+    return [0, 0];
+  };
+  held.sort((a, b) => {
+    const [tierA, tieA] = urgencyOf(a);
+    const [tierB, tieB] = urgencyOf(b);
+    return tierB - tierA || tieB - tieA;
+  });
+
   const heldRows = held.map(renderAnalysisNote).join("");
   const oppRows = opportunities.map(renderAnalysisNote).join("");
 
