@@ -1,17 +1,9 @@
 import { supabase, hasSupabaseConfig } from "./supabase.js";
 import * as store from "./storage.js";
-import { summarizePositions, suggestSplit, netShares, netInvested, hasCompleteShareData } from "./portfolio.js";
-import { estimateValue, CLOUDS_ANNUAL_RATE } from "./estimate.js";
+import { suggestSplit, netShares, netInvested, hasCompleteShareData } from "./portfolio.js";
 import { buildAnalysisCard, buildFundamentalsGlossary, mountChart } from "./analysis-chart.js";
 
-const REFRESH_SCHEDULE_NOTE =
-  "10:00, 13:00 and 15:00 Cairo time, Sunday–Thursday (EGX trading days). Fund NAVs (BAL/BMM/BRE) only actually change once a day regardless of how often this runs — funds are priced end-of-day, not intraday.";
-
 const app = document.getElementById("app");
-
-const fmtEGP = (n) =>
-  `${Math.round(n).toLocaleString()} EGP`;
-const fmtPct = (n) => `${n.toFixed(1)}%`;
 
 let state = {
   user: null,
@@ -48,17 +40,6 @@ async function refresh() {
   render();
 }
 
-function estimatedPositions() {
-  const estimates = {};
-  const effective = {};
-  for (const [ticker, pos] of Object.entries(state.positions)) {
-    const est = estimateValue(ticker, pos, state.marketPrices);
-    estimates[ticker] = est;
-    effective[ticker] = { ...pos, currentValue: est.value };
-  }
-  return { effective, estimates };
-}
-
 // Real chart instances (lightweight-charts), keyed by ticker - a plain
 // innerHTML re-render discards their DOM nodes without telling the library,
 // so they must be explicitly .remove()'d before mounting new ones each
@@ -87,22 +68,16 @@ function mountCharts() {
 }
 
 function render() {
-  const { effective, estimates } = estimatedPositions();
-  const summary = summarizePositions(effective, state.targets);
-
   app.innerHTML = `
     <div class="wrap">
       ${renderHeader()}
       ${state.error ? `<p class="error">${state.error}</p>` : ""}
       ${state.loading ? `<p class="muted">Loading…</p>` : ""}
-      ${renderStats(summary)}
-      ${renderPositionsTable(summary, estimates)}
       ${renderAddTransactionForm()}
       ${renderUpdateValueForm()}
       ${renderScreenshotUpload()}
       ${renderSplitTool()}
       ${renderTargetsEditor()}
-      ${renderMarketPrices()}
       ${renderAnalysisNotes()}
       ${!state.user ? renderVisitorTools() : ""}
     </div>
@@ -130,77 +105,6 @@ function renderHeader() {
           </form>` : ""}
       </div>
     </header>
-  `;
-}
-
-function renderStats(summary) {
-  return `
-    <div class="stat-row">
-      <div class="stat-tile">
-        <div class="stat-label">Total value</div>
-        <div class="stat-value">${fmtEGP(summary.totalValue)}</div>
-      </div>
-      <div class="stat-tile">
-        <div class="stat-label">Invested</div>
-        <div class="stat-value">${fmtEGP(summary.totalInvested)}</div>
-      </div>
-      <div class="stat-tile">
-        <div class="stat-label">Gain</div>
-        <div class="stat-value ${summary.totalGain >= 0 ? "pos" : "neg"}">
-          ${summary.totalGain >= 0 ? "+" : ""}${fmtEGP(summary.totalGain)} (${summary.totalGainPct.toFixed(1)}%)
-        </div>
-      </div>
-    </div>
-  `;
-}
-
-function estimateLabel(ticker, est) {
-  if (est.kind === "price-ratio") {
-    const noteExtra =
-      ticker === "Gold"
-        ? " — global spot converted to EGP; Thndr's local Egyptian gold price can differ from this"
-        : "";
-    return `<div class="muted">estimated from ${est.source} price change${noteExtra}</div>`;
-  }
-  if (est.kind === "accrual") {
-    return `<div class="muted">estimated: ${est.days}d compounding at ~${(CLOUDS_ANNUAL_RATE * 100).toFixed(1)}%/yr — not a market price, Clouds is interest-accruing cash, not a traded instrument</div>`;
-  }
-  return `<div class="muted">as of your last confirmed value${state.positions[ticker]?.lastValued ? ` (${state.positions[ticker].lastValued})` : ""}</div>`;
-}
-
-function renderPositionsTable(summary, estimates) {
-  if (!summary.rows.length) {
-    return `<div class="card"><h2>Positions</h2><p class="card-note">No positions yet — add a purchase below to get started.</p></div>`;
-  }
-  const rows = summary.rows
-    .map((r) => {
-      const est = estimates[r.ticker] || { kind: "confirmed" };
-      const txns = state.positions[r.ticker]?.transactions || [];
-      const avgCost = hasCompleteShareData(txns)
-        ? netInvested(txns) / netShares(txns)
-        : null;
-      return `
-        <tr>
-          <td class="tick">${r.ticker}${estimateLabel(r.ticker, est)}</td>
-          <td class="num">${Math.round(r.invested).toLocaleString()}</td>
-          <td class="num">${Math.round(r.value).toLocaleString()}</td>
-          <td class="num ${r.gain >= 0 ? "pos" : "neg"}">${r.gain >= 0 ? "+" : ""}${Math.round(r.gain).toLocaleString()}</td>
-          <td class="num ${r.gainPct >= 0 ? "pos" : "neg"}">${fmtPct(r.gainPct)}</td>
-          <td class="num">${avgCost != null ? avgCost.toFixed(2) : "—"}</td>
-          <td class="num">${fmtPct(r.mixPct)}</td>
-          <td class="num">${fmtPct(r.targetPct)}</td>
-        </tr>`;
-    })
-    .join("");
-  return `
-    <div class="card">
-      <h2>Positions</h2>
-      <p class="card-note">"Value" below is an estimate where possible (see the note under each ticker), refreshed on this schedule: ${REFRESH_SCHEDULE_NOTE}. "Avg cost" is (total invested) ÷ (net shares/units held) — only shown once every buy/sell for that ticker has a share count.</p>
-      <table>
-        <thead><tr><th>Ticker</th><th class="num">Invested</th><th class="num">Value</th><th class="num">Gain</th><th class="num">Gain %</th><th class="num">Avg cost</th><th class="num">Mix %</th><th class="num">Target %</th></tr></thead>
-        <tbody>${rows}</tbody>
-      </table>
-    </div>
   `;
 }
 
@@ -331,27 +235,6 @@ function renderTargetsEditor() {
         <div class="field"><label>Target %</label><input type="number" name="pct" min="0" max="100" step="0.1" required /></div>
         <button type="submit">Set</button>
       </form>
-    </div>
-  `;
-}
-
-function renderMarketPrices() {
-  const rows = Object.values(state.marketPrices)
-    .map(
-      (p) => `
-      <tr>
-        <td class="tick">${p.ticker}</td>
-        <td class="num">${p.is_estimate ? "~" : ""}${p.price} ${p.currency}</td>
-        <td class="muted">${p.source}</td>
-        <td class="muted">${new Date(p.updated_at).toLocaleDateString()}</td>
-      </tr>`
-    )
-    .join("");
-  return `
-    <div class="card">
-      <h2>Market prices</h2>
-      <p class="card-note">Refreshed ${REFRESH_SCHEDULE_NOTE} Gold here is the global spot price converted to EGP (via GoldAPI.io) — not the same as Thndr's local Egyptian gold price, which can run at a premium or discount to a simple spot conversion. Clouds has no market price at all (see the Positions table for how its estimate works instead).</p>
-      ${rows ? `<table><thead><tr><th>Ticker</th><th class="num">Price</th><th>Source</th><th>Updated</th></tr></thead><tbody>${rows}</tbody></table>` : `<p class="muted">No prices synced yet.</p>`}
     </div>
   `;
 }
@@ -637,7 +520,15 @@ function wireEvents() {
 }
 
 if (supabase) {
-  supabase.auth.onAuthStateChange(() => refresh());
+  // Supabase silently fires TOKEN_REFRESHED (and re-emits INITIAL_SESSION)
+  // whenever the tab regains focus, to keep the JWT from expiring - neither
+  // means anything actually changed. Reacting to every event here made the
+  // whole page flash to "Loading..." and rebuild (losing scroll position)
+  // just from switching tabs. Only a real sign-in/sign-out should trigger
+  // a full refresh.
+  supabase.auth.onAuthStateChange((event) => {
+    if (event === "SIGNED_IN" || event === "SIGNED_OUT") refresh();
+  });
 }
 
 refresh();
