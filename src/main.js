@@ -399,27 +399,27 @@ function renderAnalysisNotes() {
   // crashing the comparison.
   opportunities.sort((a, b) => (b.chart_data?.verdictScore ?? -1) - (a.chart_data?.verdictScore ?? -1));
 
-  // Held stocks sort by urgency instead - a real actionNeeded item outranks
-  // everything (something to actually go do), then a price sitting close to
-  // its stop/target (about to become actionable even before actionNeeded is
-  // written down) comes next, closest-first. Everything else keeps a stable
-  // order rather than being shuffled for no reason.
-  const urgencyOf = (n) => {
+  // Held stocks sort by urgency first, then holdingScore - a real
+  // actionNeeded item outranks everything (something to actually go do),
+  // then a price sitting close to its stop/target (about to become
+  // actionable even before actionNeeded is written down), then everything
+  // else. Within each of those tiers, best-behaving holdingScore first.
+  const urgencyTier = (n) => {
     const d = n.chart_data;
-    if (!d) return [0, 0];
-    if (d.actionNeeded) return [2, 0];
+    if (!d) return 0;
+    if (d.actionNeeded) return 2;
     const last = d.closes?.[d.closes.length - 1];
     const levels = [d.stop, ...(d.targets || [])].filter((v) => v != null);
     if (last != null && levels.length) {
       const minDistPct = Math.min(...levels.map((l) => Math.abs(l - last) / last)) * 100;
-      if (minDistPct < 3) return [1, -minDistPct]; // closer first within this tier
+      if (minDistPct < 3) return 1;
     }
-    return [0, 0];
+    return 0;
   };
   held.sort((a, b) => {
-    const [tierA, tieA] = urgencyOf(a);
-    const [tierB, tieB] = urgencyOf(b);
-    return tierB - tierA || tieB - tieA;
+    const tierDiff = urgencyTier(b) - urgencyTier(a);
+    if (tierDiff) return tierDiff;
+    return (b.chart_data?.holdingScore ?? -1) - (a.chart_data?.holdingScore ?? -1);
   });
 
   const heldRows = held.map(renderAnalysisNote).join("");
