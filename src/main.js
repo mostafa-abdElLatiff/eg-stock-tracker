@@ -255,7 +255,9 @@ function renderAnalysisNote(n) {
   if (n.chart_data && n.chart_data.closes) {
     try {
       const avg = avgCostFor(n.ticker, n.chart_data.avgCostOverride);
-      return buildAnalysisCard(n.ticker, n.chart_data, avg.value, avg.isLive);
+      const txns = state.positions[n.ticker]?.transactions || [];
+      const shares = hasCompleteShareData(txns) ? netShares(txns) : null;
+      return buildAnalysisCard(n.ticker, n.chart_data, avg.value, avg.isLive, shares);
     } catch (e) {
       return `<div class="muted">${n.ticker}: couldn't render chart_data (${e.message}) — showing summary only.</div><p style="font-size:0.85rem">${n.summary}</p>`;
     }

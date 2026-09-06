@@ -168,7 +168,7 @@ export function buildFundamentalsGlossary() {
 // out of sync - avgCostIsLive is false when it fell back to chart_data's
 // avgCostOverride instead (e.g. an older transaction is missing its share
 // count), in which case the UI says so rather than presenting it as live.
-export function buildAnalysisCard(ticker, data, avgCost, avgCostIsLive = true) {
+export function buildAnalysisCard(ticker, data, avgCost, avgCostIsLive = true, shares = null) {
   const last = data.closes[data.closes.length - 1];
   const sma5 = computeSMA(data.closes, 5);
   const sma10 = computeSMA(data.closes, 10);
@@ -196,7 +196,13 @@ export function buildAnalysisCard(ticker, data, avgCost, avgCostIsLive = true) {
     }
   }
   plan.forEach((p, i) => {
-    exitRows += `<tr><td class="label">Target ${i + 1} — sell ${p.sellPct}%</td><td class="num">${p.price.toFixed(2)}</td><td class="label num">${pct(p.price, last)}</td><td class="label num">${pct(p.price, avgCost)}</td><td class="label">stop → ${p.newStop.toFixed(2)}</td></tr>`;
+    // Real cash profit for this specific tranche - shares actually held ×
+    // the fraction this target sells × the per-share gain vs. avg cost.
+    // Only shown when we have a real, live share count (not a guess).
+    const trancheShares = shares != null ? shares * (p.sellPct / 100) : null;
+    const egpGain = trancheShares != null && avgCost != null ? trancheShares * (p.price - avgCost) : null;
+    const gainLabel = egpGain != null ? ` (≈ ${egpGain >= 0 ? "+" : ""}${Math.round(egpGain).toLocaleString()} EGP)` : "";
+    exitRows += `<tr><td class="label">Target ${i + 1} — sell ${p.sellPct}%${gainLabel}</td><td class="num">${p.price.toFixed(2)}</td><td class="label num">${pct(p.price, last)}</td><td class="label num">${pct(p.price, avgCost)}</td><td class="label">stop → ${p.newStop.toFixed(2)}</td></tr>`;
   });
   if (plan.length) {
     exitRows += `<tr><td class="label">Remainder — trail stop</td><td class="num">${trailPct}%</td><td class="label" colspan="3">under each new swing low</td></tr>`;
