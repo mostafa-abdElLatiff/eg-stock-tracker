@@ -208,7 +208,10 @@ export function buildAnalysisCard(ticker, data, avgCost, avgCostIsLive = true) {
   let entryBlock = "";
   if (data.entryLadder) {
     const entryRows = data.entryLadder
-      .map((e) => `<tr><td class="label">${e.label}</td><td class="num">${e.price.toFixed(2)}</td><td class="label">${e.pct}% of next add</td></tr>`)
+      .map(
+        (e) =>
+          `<tr><td class="label">${e.label}</td><td class="num">${e.price.toFixed(2)}</td><td class="label">${e.pct}% of next add</td><td class="label num">${pct(last, e.price)} if bought here</td></tr>`
+      )
       .join("");
     entryBlock = `<p class="section-label">Entry ladder — if adding more</p><table class="plan-table"><tbody>${entryRows}</tbody></table>`;
   } else if (data.entryNote) {
