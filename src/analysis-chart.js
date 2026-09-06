@@ -123,7 +123,12 @@ export function targetPlan(data, avgCost) {
   const targets = data.targets || [];
   const n = targets.length;
   const pctByN = { 1: [70], 2: [35, 50], 3: [25, 30, 30], 4: [20, 20, 25, 20] };
-  const pcts = pctByN[n] || targets.map(() => Math.round(100 / n));
+  // sellPcts is a per-ticker override for when the default ladder doesn't
+  // fit - e.g. MASR: target 1 cut to 20% (RSI 75, already extended) with
+  // the freed 15% moved to the trailing remainder instead of target 2,
+  // since target 2 sits well below a real (if thinly-sourced) fundamental
+  // target and the user wants more shares riding past it, not locked in.
+  const pcts = data.sellPcts || pctByN[n] || targets.map(() => Math.round(100 / n));
   return targets.map((price, i) => ({
     price,
     sellPct: pcts[i],
