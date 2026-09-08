@@ -207,7 +207,9 @@ export function buildAnalysisCard(ticker, data, avgCost, avgCostIsLive = true, s
     const trancheShares = shares != null ? shares * (p.sellPct / 100) : null;
     const egpGain = trancheShares != null && avgCost != null ? trancheShares * (p.price - avgCost) : null;
     const gainLabel = egpGain != null ? ` (≈ ${egpGain >= 0 ? "+" : ""}${Math.round(egpGain).toLocaleString()} EGP)` : "";
-    exitRows += `<tr><td class="label">Target ${i + 1} — sell ${p.sellPct}%${gainLabel}</td><td class="num">${p.price.toFixed(2)}</td><td class="label num">${pct(p.price, last)}</td><td class="label num">${pct(p.price, avgCost)}</td><td class="label">stop → ${p.newStop != null ? p.newStop.toFixed(2) : "—"}</td></tr>`;
+    const basis = Array.isArray(data.targetBasis) ? data.targetBasis.find((b) => b.price === p.price) : null;
+    const basisLabel = basis ? `<div class="muted" style="font-size:0.7rem;font-weight:400">${basis.basis}</div>` : "";
+    exitRows += `<tr><td class="label">Target ${i + 1} — sell ${p.sellPct}%${gainLabel}${basisLabel}</td><td class="num">${p.price.toFixed(2)}</td><td class="label num">${pct(p.price, last)}</td><td class="label num">${pct(p.price, avgCost)}</td><td class="label">stop → ${p.newStop != null ? p.newStop.toFixed(2) : "—"}</td></tr>`;
   });
   if (plan.length) {
     exitRows += `<tr><td class="label">Remainder — trail stop</td><td class="num">${trailPct}%</td><td class="label" colspan="3">under each new swing low</td></tr>`;

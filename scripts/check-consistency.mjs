@@ -311,11 +311,24 @@ function checkUnreachableTargets(rows) {
     const last = d.closes[d.closes.length - 1];
     const hi90 = Math.max(...d.highs.slice(-90));
     const t1 = d.targets[0];
+    // A rung derived by Fibonacci extension legitimately sits above the 90-day
+    // high - that is the whole point of an extension, and it is the documented
+    // fallback for a stock at its highs with nothing overhead to observe. So the
+    // 90-day test applies only to rungs claiming to be OBSERVED swing highs.
+    // Every rung still has to be within reach: >20% away cannot fire on a normal
+    // move regardless of how it was derived.
+    const basis = Array.isArray(d.targetBasis) ? d.targetBasis.find((b) => b.price === t1) : null;
+    const isFib = basis?.method === "fib";
     if (t1 <= last) {
       issues.push(`${row.ticker}: target 1 (${t1}) is at or BELOW the current close (${last}) - it is a support/achieved level, not an exit`);
-    } else if (t1 > hi90 * 1.02) {
+    } else if (!isFib && t1 > hi90 * 1.02) {
       const gap = ((t1 - hi90) / hi90 * 100).toFixed(1);
-      issues.push(`${row.ticker}: target 1 (${t1}) is ${gap}% above the 90-day high (${hi90}) - unreachable in this regime, so no partial exit can fire. Use a real swing high; put analyst prices in fundamentalTarget.`);
+      issues.push(`${row.ticker}: target 1 (${t1}) claims to be an observed level but is ${gap}% above the 90-day high (${hi90}) - unreachable. Use a real swing high, or a Fibonacci extension with method:"fib" recorded in targetBasis.`);
+    } else if ((t1 - last) / last > 0.20) {
+      issues.push(`${row.ticker}: target 1 (${t1}) is ${(((t1 - last) / last) * 100).toFixed(1)}% above spot - too far to fire on a normal move, whatever its basis`);
+    }
+    if (Array.isArray(d.targets) && d.targets.length && !Array.isArray(d.targetBasis)) {
+      issues.push(`${row.ticker}: has targets but no targetBasis - every rung must record WHY that price (swing high or Fibonacci extension), never an invented number`);
     }
   }
   return issues;
