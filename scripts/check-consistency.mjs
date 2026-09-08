@@ -209,6 +209,54 @@ function checkStalePriceCitations(rows) {
   return issues;
 }
 
+// Catches the fifth and hardest instance of this project's recurring bug: the
+// NARRATIVE fields going stale. Found by the user on ETEL (Sept 8 2026), whose
+// `pattern` still described "a peak of 118.97 (Aug 18), then a tight sideways
+// range 116.00-116.50" while price was 120.12 after spiking to 126.40.
+//
+// What makes this class different, and why no earlier check caught it: every
+// number in that text was HISTORICALLY ACCURATE. Nothing in it was wrong - it
+// simply described a period that had ended three weeks earlier. Comparing
+// numbers to fields cannot detect that, so this instead asks a different
+// question: does the narrative still describe where the price actually is?
+//
+// The other 17 narrative fields on a card were previously validated by nothing
+// at all, while sectionChecks stamped them "checked".
+const NARRATIVE_FIELDS = ["pattern", "trendLabel", "short", "medium", "long", "volumeRead"];
+
+function checkStaleNarrative(rows) {
+  const issues = [];
+  for (const row of rows) {
+    const d = row.chart_data;
+    if (!d || typeof d === "string" || !d.closes || d.kind === "rejected") continue;
+    const last = d.closes[d.closes.length - 1];
+    if (last == null) continue;
+    for (const field of NARRATIVE_FIELDS) {
+      const raw = d[field];
+      if (typeof raw !== "string") continue;
+      const text = raw.replace(/<[^>]+>/g, " ");
+      const re = /(\d+\.\d{1,2})\s*(?:-|–|to)\s*(\d+\.\d{1,2})/g;
+      let m;
+      while ((m = re.exec(text))) {
+        const lo = Math.min(+m[1], +m[2]), hi = Math.max(+m[1], +m[2]);
+        // Skip ranges that plainly are not prices for this ticker - volume
+        // figures in millions (EFID's "2.3-2.98") sit nowhere near the price.
+        if (hi < last * 0.25 || lo > last * 4) continue;
+        // Skip ranges the text itself frames as historical context rather than
+        // as a description of where price is now.
+        const before = text.slice(Math.max(0, m.index - 120), m.index);
+        if (/\b(\d+-month context|7-month|a year ago|back in|earlier this year|historic(al)?|previously|used to|before the breakout|pre-breakout)\b/i.test(before)) continue;
+        // A range that no longer brackets the price (3% tolerance) means the
+        // narrative is describing a regime price has since left.
+        if (hi < last * 0.97 || lo > last * 1.03) {
+          issues.push(`${row.ticker}: ${field} describes the range ${lo}-${hi}, but price is now ${last} - narrative describes a regime price has left`);
+        }
+      }
+    }
+  }
+  return issues;
+}
+
 async function checkKindMismatches(supabase, userId, chartByTicker) {
   const { data: txns, error } = await supabase.from("transactions").select("ticker, type").eq("user_id", userId).eq("type", "buy");
   if (error) {
@@ -297,6 +345,13 @@ async function main() {
     totalIssues += priceIssues.length;
     console.log(`\n=== stale price citations (prose quotes an old price) ===`);
     priceIssues.forEach((i) => console.log(" -", i));
+  }
+
+  const narrativeIssues = checkStaleNarrative(rows);
+  if (narrativeIssues.length) {
+    totalIssues += narrativeIssues.length;
+    console.log(`\n=== stale narrative (pattern/outlook describes a regime price has left) ===`);
+    narrativeIssues.forEach((i) => console.log(" -", i));
   }
 
   if (totalIssues === 0) {
