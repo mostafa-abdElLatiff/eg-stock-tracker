@@ -319,6 +319,7 @@ export function buildAnalysisCard(ticker, data, avgCost, avgCostIsLive = true, s
 
     <p class="section-label">Exit ladder — what you hold${checkedLabel(data.sectionChecks?.technicals)}</p>
     ${data.ladderNote ? `<p class="body-text" style="border-left:2px solid var(--resistance);padding-left:8px;margin-bottom:8px;font-size:0.82rem">${data.ladderNote}</p>` : ""}
+    ${data.probabilityNote ? `<p class="body-text" style="border-left:2px solid var(--support);padding-left:8px;margin-bottom:8px;font-size:0.82rem">${data.probabilityNote}</p>` : ""}
     <table class="plan-table">
       <thead><tr><th>Level</th><th class="num">Price</th><th class="num">vs today</th><th class="num">vs your cost</th><th>Then move stop</th></tr></thead>
       <tbody>${exitRows}</tbody>
