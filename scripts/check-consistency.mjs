@@ -150,6 +150,65 @@ function checkStructuralStaleness(rows) {
   return issues;
 }
 
+// Catches the fourth instance of this project's recurring bug shape, found by
+// the user on ETEL (Sept 8 2026): the OHLC array gets refreshed but prose that
+// quotes the latest price keeps citing the old one. ETEL simultaneously showed
+// 120.12 (real close), 120.40 (a mid-session Mubasher print mistaken for the
+// close) and 120.80 (the PREVIOUS day's close, still quoted in why/planStatus).
+//
+// Deliberately narrow. An earlier draft also matched a bare "at <number>",
+// which flagged 20 citations of which most were legitimate stops, targets and
+// named levels - useless. These four phrasings can only mean the latest price.
+// <strong>...</strong> spans are stripped first: those are labelled levels and
+// are already covered by checkField() above.
+const PRICE_CITATIONS = [
+  /\bclosed?\s+(?:at\s+)?(\d+\.\d{1,2})\b/gi,
+  /\btrading\s+(?:at\s+)?(\d+\.\d{1,2})\b/gi,
+  /\bcurrent(?:ly)?\s+(?:price\s+(?:of\s+)?)?(\d+\.\d{1,2})\b/gi,
+  /\btoday'?s\s+(\d+\.\d{1,2})\b/gi,
+];
+
+function checkStalePriceCitations(rows) {
+  const issues = [];
+  for (const row of rows) {
+    const d = row.chart_data;
+    if (!d || typeof d === "string" || !d.closes || d.kind === "rejected") continue;
+    const lastClose = d.closes[d.closes.length - 1];
+    if (lastClose == null) continue;
+    for (const field of ["why", "buyApproach", "planStatus", "actionNeeded"]) {
+      const raw = d[field];
+      if (typeof raw !== "string") continue;
+      const text = raw.replace(/<strong>.*?<\/strong>/gi, " ");
+      for (const re of PRICE_CITATIONS) {
+        re.lastIndex = 0;
+        let m;
+        while ((m = re.exec(text))) {
+          const n = parseFloat(m[1]);
+          const diff = Math.abs(n - lastClose) / lastClose;
+          // Two real false-positive classes, both found on the first run:
+          //  - "today's 41.95 low" / "...high" - a qualified intraday extreme,
+          //    not the close (ORHD).
+          //  - "closed 7.50 flat on Sept 6" - an explicitly dated historical
+          //    reference, legitimately not today's price (RAYA).
+          const after = text.slice(m.index + m[0].length, m.index + m[0].length + 40);
+          const before = text.slice(Math.max(0, m.index - 40), m.index);
+          if (/^\s*(low|high)\b/i.test(after)) continue;
+          if (/\bon\s+(Jan|Feb|Mar|Apr|May|Jun|Jul|Aug|Sep|Oct|Nov|Dec)/i.test(after)) continue;
+          //  - "A year ago this closed 25.00 vs 25.92 today" (HRHO) - an
+          //    explicit historical comparison, correctly not today's price.
+          if (/\b(a year ago|twelve months ago|12 months ago|last year|back in)\b[^.]*$/i.test(before)) continue;
+          // >0.3% rules out rounding; <15% rules out a deliberate reference to
+          // a distant level that happens to match one of these phrasings.
+          if (diff > 0.003 && diff < 0.15) {
+            issues.push(`${row.ticker}: ${field} says "${m[0].trim()}" but the latest close is ${lastClose} (${(diff * 100).toFixed(1)}% off)`);
+          }
+        }
+      }
+    }
+  }
+  return issues;
+}
+
 async function checkKindMismatches(supabase, userId, chartByTicker) {
   const { data: txns, error } = await supabase.from("transactions").select("ticker, type").eq("user_id", userId).eq("type", "buy");
   if (error) {
@@ -231,6 +290,13 @@ async function main() {
     totalIssues += structuralIssues.length;
     console.log(`\n=== structural staleness (price broke support/resistance, level never updated) ===`);
     structuralIssues.forEach((i) => console.log(" -", i));
+  }
+
+  const priceIssues = checkStalePriceCitations(rows);
+  if (priceIssues.length) {
+    totalIssues += priceIssues.length;
+    console.log(`\n=== stale price citations (prose quotes an old price) ===`);
+    priceIssues.forEach((i) => console.log(" -", i));
   }
 
   if (totalIssues === 0) {
