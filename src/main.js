@@ -276,8 +276,13 @@ function renderAnalysisNotes() {
   // apart from things you actually hold or track (positions + indices/funds) -
   // classified by an explicit `kind` on chart_data rather than guessed, so a
   // plain-text note (no chart_data.kind at all) defaults to the holdings side.
+  // kind:"rejected" is a third state (added Sept 8 2026): real research done,
+  // screened, and explicitly avoided - kept in Supabase so the work isn't
+  // thrown away, but shown in neither section by default. Before this, an
+  // avoid-band opportunity had to be deleted outright to get off the list,
+  // which lost the research; now it's just filed here instead.
   const opportunities = all.filter((n) => n.chart_data?.kind === "opportunity");
-  const held = all.filter((n) => n.chart_data?.kind !== "opportunity");
+  const held = all.filter((n) => n.chart_data?.kind !== "opportunity" && n.chart_data?.kind !== "rejected");
 
   // Best-to-worst by verdictScore (0-100, higher = more attractive right
   // now) - unscored entries (or plain-text notes) sort last rather than

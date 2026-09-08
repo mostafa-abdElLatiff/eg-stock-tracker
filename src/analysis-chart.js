@@ -132,7 +132,7 @@ export function targetPlan(data, avgCost) {
   return targets.map((price, i) => ({
     price,
     sellPct: pcts[i],
-    newStop: i === 0 ? (avgCost != null ? avgCost : data.support) : targets[i - 1],
+    newStop: i === 0 ? (avgCost ?? data.support ?? data.stop ?? null) : targets[i - 1],
   }));
 }
 
@@ -207,7 +207,7 @@ export function buildAnalysisCard(ticker, data, avgCost, avgCostIsLive = true, s
     const trancheShares = shares != null ? shares * (p.sellPct / 100) : null;
     const egpGain = trancheShares != null && avgCost != null ? trancheShares * (p.price - avgCost) : null;
     const gainLabel = egpGain != null ? ` (≈ ${egpGain >= 0 ? "+" : ""}${Math.round(egpGain).toLocaleString()} EGP)` : "";
-    exitRows += `<tr><td class="label">Target ${i + 1} — sell ${p.sellPct}%${gainLabel}</td><td class="num">${p.price.toFixed(2)}</td><td class="label num">${pct(p.price, last)}</td><td class="label num">${pct(p.price, avgCost)}</td><td class="label">stop → ${p.newStop.toFixed(2)}</td></tr>`;
+    exitRows += `<tr><td class="label">Target ${i + 1} — sell ${p.sellPct}%${gainLabel}</td><td class="num">${p.price.toFixed(2)}</td><td class="label num">${pct(p.price, last)}</td><td class="label num">${pct(p.price, avgCost)}</td><td class="label">stop → ${p.newStop != null ? p.newStop.toFixed(2) : "—"}</td></tr>`;
   });
   if (plan.length) {
     exitRows += `<tr><td class="label">Remainder — trail stop</td><td class="num">${trailPct}%</td><td class="label" colspan="3">under each new swing low</td></tr>`;
@@ -268,26 +268,37 @@ export function buildAnalysisCard(ticker, data, avgCost, avgCostIsLive = true, s
         : ""
     }
     ${data.dailyFlag ? `<p class="body-text" style="border-left:2px solid var(--accent);padding-left:8px;margin-bottom:10px"><strong>Latest session:</strong> ${data.dailyFlag}</p>` : ""}
+    ${
+      data.corporateActions
+        ? `<div style="border:1px solid var(--resistance); border-radius:8px; padding:8px 10px; margin-bottom:10px; background:color-mix(in srgb, var(--resistance) 10%, transparent)">
+      <strong style="color:var(--resistance)">Dividends / corporate actions:</strong> ${data.corporateActions}
+    </div>`
+        : ""
+    }
     <div class="chart" id="chart-${ticker}" data-chart-ticker="${ticker}"></div>
     <p class="muted" style="margin:2px 0 8px">Drag to pan, scroll/pinch to zoom. Support/resistance/stop/target levels are labeled directly on the price axis.</p>
 
-    <p class="section-label">Pattern observed</p>
+    <p class="section-label">Pattern observed${checkedLabel(data.sectionChecks?.pattern)}</p>
     <p class="body-text"><strong>${data.patternLabel || ""}</strong>${data.patternLabel ? " — " : ""}${data.pattern || ""}</p>
     <table class="plan-table">
       <tbody>
         <tr><td class="label">RSI-14</td><td style="color:${rsiColor}">${data.rsi ?? "—"}</td><td class="label" colspan="2">${data.rsi != null ? rsiRead : ""}</td></tr>
         <tr><td class="label">Trend</td><td colspan="3">${data.trendLabel || ""}</td></tr>
+        ${data.movingAverages ? `<tr><td class="label" style="vertical-align:top">Moving averages</td><td colspan="3" style="text-align:left">${data.movingAverages}</td></tr>` : ""}
+        ${data.obvRead ? `<tr><td class="label" style="vertical-align:top">OBV</td><td colspan="3" style="text-align:left">${data.obvRead}</td></tr>` : ""}
+        ${data.macdRead ? `<tr><td class="label" style="vertical-align:top">MACD</td><td colspan="3" style="text-align:left">${data.macdRead}</td></tr>` : ""}
+        ${data.atrNote ? `<tr><td class="label" style="vertical-align:top">ATR</td><td colspan="3" style="text-align:left">${data.atrNote}</td></tr>` : ""}
       </tbody>
     </table>
     <p class="body-text"><strong>Buy at support or after breakout?</strong> ${data.buyApproach || ""}</p>
 
-    ${data.why ? `<p class="section-label">Why these exact numbers (technical)</p><p class="body-text">${data.why}</p>` : ""}
+    ${data.why ? `<p class="section-label">Why these exact numbers (technical)${checkedLabel(data.sectionChecks?.technicals)}</p><p class="body-text">${data.why}</p>` : ""}
 
     ${data.ictNotes ? `<p class="section-label">ICT-style read (supplementary - see caveats)</p><p class="body-text">${data.ictNotes}</p>` : ""}
 
     ${
       data.finPosition || data.cashFlow || data.profitability || data.valuation || data.newsRecent || data.qualityOfEarnings || data.capexTrend || data.dividendInfo || data.ownershipInfo
-        ? `<p class="section-label">Fundamentals</p>
+        ? `<p class="section-label">Fundamentals${checkedLabel(data.sectionChecks?.fundamentals)}</p>
     <table class="plan-table">
       <tbody>
         ${data.finPosition ? `<tr><td class="label" style="vertical-align:top">Financial position</td><td colspan="3" style="text-align:left">${data.finPosition}</td></tr>` : ""}
@@ -304,7 +315,7 @@ export function buildAnalysisCard(ticker, data, avgCost, avgCostIsLive = true, s
         : ""
     }
 
-    <p class="section-label">Exit ladder — what you hold</p>
+    <p class="section-label">Exit ladder — what you hold${checkedLabel(data.sectionChecks?.technicals)}</p>
     <table class="plan-table">
       <thead><tr><th>Level</th><th class="num">Price</th><th class="num">vs today</th><th class="num">vs your cost</th><th>Then move stop</th></tr></thead>
       <tbody>${exitRows}</tbody>
@@ -313,7 +324,7 @@ export function buildAnalysisCard(ticker, data, avgCost, avgCostIsLive = true, s
 
     ${
       data.short || data.medium || data.long
-        ? `<p class="section-label">Outlook</p>
+        ? `<p class="section-label">Outlook${checkedLabel(data.sectionChecks?.outlook)}</p>
     <table class="plan-table">
       <tbody>
         <tr><td class="label">Short (1-2 weeks)</td><td colspan="3" style="text-align:left">${data.short || ""}</td></tr>
@@ -324,6 +335,13 @@ export function buildAnalysisCard(ticker, data, avgCost, avgCostIsLive = true, s
         : ""
     }
   </div>`;
+}
+
+// Renders next to a section-label so staleness is visible even when a
+// section was checked and genuinely needed no change - "checked" is not
+// the same claim as "updated," and both need to be on the record.
+function checkedLabel(date) {
+  return date ? ` <span class="muted" style="font-weight:400; font-size:0.72rem">— checked ${date}</span>` : "";
 }
 
 // base == null covers indices and positions without a complete share count

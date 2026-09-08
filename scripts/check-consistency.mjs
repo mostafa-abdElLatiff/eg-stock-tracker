@@ -42,6 +42,131 @@ function checkField(ticker, fieldName, text, level, value, tolerancePct = 3) {
   return issues;
 }
 
+// Catches the second recurring bug class (first caught live on ADIB, Sept 7
+// 2026): a ticker gets a real buy transaction logged (the user tells us
+// they bought it, or a transaction row exists) but chart_data.kind stays
+// "opportunity" - so the card keeps presenting a held position as a
+// prospective entry. Any ticker with a logged buy and kind:"opportunity"
+// is flagged, even if the transaction's shares/date details are still
+// incomplete - the kind tag shouldn't wait on that.
+// Catches a third instance of the same bug shape (found live on ADIB, Sept
+// 7 2026): when a ticker flips from opportunity to held (or back), the
+// score field for its OLD state doesn't get cleared, and the card's score
+// badge picks verdictScore over holdingScore whenever both are present
+// (see analysis-chart.js's pill logic) - so a held stock kept showing its
+// stale opportunity score. verdictScore is opportunity-only, holdingScore
+// is held-only; a ticker should never carry both, or the wrong one showing.
+function checkScoreFieldMismatches(rows) {
+  const issues = [];
+  for (const row of rows) {
+    const d = row.chart_data;
+    if (!d || typeof d === "string") continue;
+    // "rejected" (added Sept 8 2026) keeps its verdictScore on purpose - it's
+    // the documented evidence for why the ticker was avoided, and it's never
+    // rendered (excluded from both sections in main.js) so it can't shadow
+    // anything in the card pill. Only "opportunity" vs. everything-else
+    // (held) needs the mutual-exclusivity check below.
+    if (d.kind === "rejected") {
+      if (d.holdingScore != null) issues.push(`${row.ticker}: kind is "rejected" but holdingScore (${d.holdingScore}) is set - rejected tickers were never held, clear it`);
+      continue;
+    }
+    const isOpportunity = d.kind === "opportunity";
+    if (isOpportunity && d.holdingScore != null) {
+      issues.push(`${row.ticker}: kind is "opportunity" but holdingScore (${d.holdingScore}) is still set - clear it`);
+    }
+    if (!isOpportunity && d.verdictScore != null) {
+      issues.push(`${row.ticker}: held (kind !== "opportunity") but verdictScore (${d.verdictScore}) is still set - clear it, it'll shadow holdingScore in the card's pill`);
+    }
+  }
+  return issues;
+}
+
+// Catches the "checked" claim going stale (user request, Sept 8 2026,
+// after repeatedly catching sections left old inside an otherwise-updated
+// card): every ticker should carry a sectionChecks date per section
+// (technicals/pattern/fundamentals/outlook) that's no older than
+// lastUpdated - a section can be "checked, no change needed" without being
+// rewritten, but it can't go unverified while the rest of the card moves
+// on. Missing entirely is flagged the same as stale.
+// Index/fund trackers (EGX30/EGX33/EGX70EWI/EGX100EWI) aren't individual
+// stocks - they don't get the same per-section research depth (no real
+// fundamentals workup, e.g.), so the sectionChecks convention doesn't
+// apply to them the same way. Excluded here, not just in ad-hoc scripts.
+const NON_STOCK_TICKERS = new Set(["EGX30", "EGX33", "EGX70EWI", "EGX100EWI"]);
+
+function checkSectionChecks(rows) {
+  const issues = [];
+  const SECTIONS = ["technicals", "pattern", "fundamentals", "outlook"];
+  for (const row of rows) {
+    if (NON_STOCK_TICKERS.has(row.ticker)) continue;
+    const d = row.chart_data;
+    if (!d || typeof d === "string" || !d.closes || !d.lastUpdated) continue;
+    // "rejected" tickers are frozen research, not actively maintained - they
+    // don't need a fresh check-date every time the rest of the board moves.
+    if (d.kind === "rejected") continue;
+    // Only expect a section's check-date if the card actually has that
+    // section's content - an opportunity with no fundamentals text yet
+    // shouldn't be dinged for a missing fundamentals check-date.
+    const hasContent = {
+      technicals: d.support != null || d.resistance != null || d.stop != null,
+      pattern: !!(d.pattern || d.patternLabel),
+      fundamentals: !!(d.finPosition || d.cashFlow || d.profitability || d.valuation || d.newsRecent || d.qualityOfEarnings || d.capexTrend || d.dividendInfo || d.ownershipInfo),
+      outlook: !!(d.short || d.medium || d.long),
+    };
+    for (const section of SECTIONS) {
+      if (!hasContent[section]) continue;
+      const checked = d.sectionChecks?.[section];
+      if (!checked) {
+        issues.push(`${row.ticker}: ${section} section has content but no sectionChecks.${section} date`);
+      } else if (checked < d.lastUpdated) {
+        issues.push(`${row.ticker}: sectionChecks.${section} (${checked}) is older than lastUpdated (${d.lastUpdated}) - re-verify and bump it`);
+      }
+    }
+  }
+  return issues;
+}
+
+// Catches a structural staleness class missed by every other check: a
+// stock breaks out and keeps running, but "resistance" never gets updated
+// even though price is now well above it (ETEL, Sept 8 2026 - caught by
+// the user, not by this script, which is exactly the gap this closes).
+// Real breakouts do run past resistance before anyone relabels it, so this
+// only fires once the gap is real (>0.5%) and clearly stale, not a same-day
+// intraday tag.
+function checkStructuralStaleness(rows) {
+  const issues = [];
+  for (const row of rows) {
+    const d = row.chart_data;
+    if (!d || typeof d === "string" || !d.closes) continue;
+    if (d.kind === "rejected") continue; // frozen research, price moves on without it
+    const last = d.closes[d.closes.length - 1];
+    if (d.resistance != null && last > d.resistance * 1.005) {
+      issues.push(`${row.ticker}: resistance (${d.resistance}) is below the current close (${last}) - price already broke it, relabel (flip to support / clear if no real ceiling found) instead of leaving it stale`);
+    }
+    if (d.support != null && last < d.support * 0.995) {
+      issues.push(`${row.ticker}: support (${d.support}) is above the current close (${last}) - price already broke below it, re-evaluate (stop may need triggering, or support needs revising down)`);
+    }
+  }
+  return issues;
+}
+
+async function checkKindMismatches(supabase, userId, chartByTicker) {
+  const { data: txns, error } = await supabase.from("transactions").select("ticker, type").eq("user_id", userId).eq("type", "buy");
+  if (error) {
+    console.error(error.message);
+    process.exit(1);
+  }
+  const tickersWithBuys = new Set(txns.map((t) => t.ticker));
+  const issues = [];
+  for (const ticker of tickersWithBuys) {
+    const d = chartByTicker[ticker];
+    if (d && d.kind === "opportunity") {
+      issues.push(`${ticker}: has a logged buy transaction but chart_data.kind is still "opportunity" - should be flipped to held`);
+    }
+  }
+  return issues;
+}
+
 async function main() {
   const { data: users } = await supabase.auth.admin.listUsers();
   const user = users.users.find((u) => u.email === ANALYSIS_USER_EMAIL);
@@ -57,6 +182,9 @@ async function main() {
   }
 
   let totalIssues = 0;
+  const chartByTicker = {};
+  for (const row of rows) chartByTicker[row.ticker] = row.chart_data;
+
   for (const row of rows) {
     const d = row.chart_data;
     if (!d || typeof d === "string" || !d.closes) continue;
@@ -75,6 +203,34 @@ async function main() {
       console.log(`\n=== ${row.ticker} ===`);
       issues.forEach((i) => console.log(" -", i));
     }
+  }
+
+  const kindIssues = await checkKindMismatches(supabase, user.id, chartByTicker);
+  if (kindIssues.length) {
+    totalIssues += kindIssues.length;
+    console.log(`\n=== kind mismatches ===`);
+    kindIssues.forEach((i) => console.log(" -", i));
+  }
+
+  const scoreIssues = checkScoreFieldMismatches(rows);
+  if (scoreIssues.length) {
+    totalIssues += scoreIssues.length;
+    console.log(`\n=== stale score fields ===`);
+    scoreIssues.forEach((i) => console.log(" -", i));
+  }
+
+  const sectionIssues = checkSectionChecks(rows);
+  if (sectionIssues.length) {
+    totalIssues += sectionIssues.length;
+    console.log(`\n=== missing/stale sectionChecks ===`);
+    sectionIssues.forEach((i) => console.log(" -", i));
+  }
+
+  const structuralIssues = checkStructuralStaleness(rows);
+  if (structuralIssues.length) {
+    totalIssues += structuralIssues.length;
+    console.log(`\n=== structural staleness (price broke support/resistance, level never updated) ===`);
+    structuralIssues.forEach((i) => console.log(" -", i));
   }
 
   if (totalIssues === 0) {
