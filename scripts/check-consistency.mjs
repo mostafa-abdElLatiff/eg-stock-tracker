@@ -94,6 +94,33 @@ function checkScoreFieldMismatches(rows) {
 // apply to them the same way. Excluded here, not just in ad-hoc scripts.
 const NON_STOCK_TICKERS = new Set(["EGX30", "EGX33", "EGX70EWI", "EGX100EWI"]);
 
+// Catches EMPTY narrative fields on a card that claims to be checked. Found
+// Sept 8 2026 on HRHO/ISPH/GBCO/PHDC/ARCC: cards created by the EGX100
+// screening batches had levels, fundamentals and scores written but left
+// `pattern`, `short`, `medium` and `volumeRead` as empty strings - and then
+// stamped sectionChecks anyway.
+//
+// checkSectionChecks below could never catch it, because it asks whether a
+// section HAS content via `!!(d.pattern || d.patternLabel)` - so a blank
+// `pattern` sitting beside a populated `patternLabel` counts as present. The
+// section got a check-date while its main prose field was empty. This is the
+// absence-of-text sibling of the staleness checks: not old, simply missing.
+function checkEmptyNarrative(rows) {
+  const issues = [];
+  const EXPECTED = ["pattern", "trendLabel", "short", "medium", "long", "why", "buyApproach"];
+  for (const row of rows) {
+    if (NON_STOCK_TICKERS.has(row.ticker)) continue;
+    const d = row.chart_data;
+    if (!d || typeof d === "string" || !d.closes || d.kind === "rejected") continue;
+    for (const f of EXPECTED) {
+      if (d[f] == null || String(d[f]).trim() === "") {
+        issues.push(`${row.ticker}: ${f} is empty, but the card is stamped as checked`);
+      }
+    }
+  }
+  return issues;
+}
+
 function checkSectionChecks(rows) {
   const issues = [];
   const SECTIONS = ["technicals", "pattern", "fundamentals", "outlook"];
@@ -242,6 +269,11 @@ function checkStaleNarrative(rows) {
         // Skip ranges that plainly are not prices for this ticker - volume
         // figures in millions (EFID's "2.3-2.98") sit nowhere near the price.
         if (hi < last * 0.25 || lo > last * 4) continue;
+        // Skip ranges that are plainly a metric, not a price. A P/E range like
+        // "6.67-9.61" can sit inside the price band by coincidence (ORWE,
+        // Sept 8) and is not a claim about where price is trading.
+        const near = text.slice(Math.max(0, m.index - 30), m.index);
+        if (/\b(P\/E|PEG|P\/B|P\/S|ratio|yield|RSI|ATR|margin|growth|multiple|EPS|ROE|ROIC)\b[^.]{0,25}$/i.test(near)) continue;
         // Skip ranges the text itself frames as historical context rather than
         // as a description of where price is now.
         const before = text.slice(Math.max(0, m.index - 120), m.index);
@@ -345,6 +377,13 @@ async function main() {
     totalIssues += priceIssues.length;
     console.log(`\n=== stale price citations (prose quotes an old price) ===`);
     priceIssues.forEach((i) => console.log(" -", i));
+  }
+
+  const emptyIssues = checkEmptyNarrative(rows);
+  if (emptyIssues.length) {
+    totalIssues += emptyIssues.length;
+    console.log(`\n=== empty narrative fields (card stamped checked, prose blank) ===`);
+    emptyIssues.forEach((i) => console.log(" -", i));
   }
 
   const narrativeIssues = checkStaleNarrative(rows);
