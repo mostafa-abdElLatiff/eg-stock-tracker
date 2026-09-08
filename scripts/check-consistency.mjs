@@ -289,6 +289,38 @@ function checkStaleNarrative(rows) {
   return issues;
 }
 
+// Catches the defect the user surfaced on CLHO (Sept 8 2026): an exit ladder
+// whose first rung price can never reach. CLHO's target 1 was 18.73; the stock
+// peaked at 18.45 and rolled over, so no partial sale ever fired and the
+// position round-tripped -8.4% from its high with no protection.
+//
+// Scanning the rest found it was systemic - 5 of 12 held positions had the same
+// defect. The cause was consistent: ANALYST 12-month price targets had been used
+// as technical rungs (ORHD 58.55, COMI 180.53, RAYA 11.20). Those express a
+// valuation view, not a price a swing position will trade through. They belong
+// in fundamentalTarget, which is context and never a rung.
+//
+// Rule enforced here: target 1 must sit at or inside the 90-day high. If price
+// has not reached it in the recent regime, it is decoration rather than a plan.
+function checkUnreachableTargets(rows) {
+  const issues = [];
+  for (const row of rows) {
+    const d = row.chart_data;
+    if (!d || typeof d === "string" || !d.closes || !d.highs || d.kind === "rejected") continue;
+    if (!Array.isArray(d.targets) || !d.targets.length) continue;
+    const last = d.closes[d.closes.length - 1];
+    const hi90 = Math.max(...d.highs.slice(-90));
+    const t1 = d.targets[0];
+    if (t1 <= last) {
+      issues.push(`${row.ticker}: target 1 (${t1}) is at or BELOW the current close (${last}) - it is a support/achieved level, not an exit`);
+    } else if (t1 > hi90 * 1.02) {
+      const gap = ((t1 - hi90) / hi90 * 100).toFixed(1);
+      issues.push(`${row.ticker}: target 1 (${t1}) is ${gap}% above the 90-day high (${hi90}) - unreachable in this regime, so no partial exit can fire. Use a real swing high; put analyst prices in fundamentalTarget.`);
+    }
+  }
+  return issues;
+}
+
 async function checkKindMismatches(supabase, userId, chartByTicker) {
   const { data: txns, error } = await supabase.from("transactions").select("ticker, type").eq("user_id", userId).eq("type", "buy");
   if (error) {
@@ -384,6 +416,13 @@ async function main() {
     totalIssues += emptyIssues.length;
     console.log(`\n=== empty narrative fields (card stamped checked, prose blank) ===`);
     emptyIssues.forEach((i) => console.log(" -", i));
+  }
+
+  const targetIssues = checkUnreachableTargets(rows);
+  if (targetIssues.length) {
+    totalIssues += targetIssues.length;
+    console.log(`\n=== unreachable exit targets (ladder cannot fire) ===`);
+    targetIssues.forEach((i) => console.log(" -", i));
   }
 
   const narrativeIssues = checkStaleNarrative(rows);
