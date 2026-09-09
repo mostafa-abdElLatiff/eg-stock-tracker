@@ -277,6 +277,13 @@ export function buildAnalysisCard(ticker, data, avgCost, avgCostIsLive = true, s
     </div>`
         : ""
     }
+    ${
+      data.macroContext
+        ? `<div style="border:1px solid var(--sma); border-radius:8px; padding:8px 10px; margin-bottom:10px">
+      <strong>Macro context:</strong> ${data.macroContext}
+    </div>`
+        : ""
+    }
     <div class="chart" id="chart-${ticker}" data-chart-ticker="${ticker}"></div>
     <p class="muted" style="margin:2px 0 8px">Drag to pan, scroll/pinch to zoom. Support/resistance/stop/target levels are labeled directly on the price axis.</p>
 
