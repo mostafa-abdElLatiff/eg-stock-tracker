@@ -2,7 +2,10 @@ name: Refresh market prices
 
 on:
   schedule:
-    # Cairo is UTC+2 year-round (no DST). EGX trading hours are 10:00-14:30
+    # TIMES ARE UTC. Egypt reintroduced DST in 2023: Cairo is UTC+3 late
+    # April-late October, UTC+2 otherwise. This comment previously claimed
+    # UTC+2 year-round, which made every time below an hour out all summer.
+    # EGX trading hours are 10:00-14:30
     # Cairo, Sun-Thu. Two cadences, not three:
     #
     # Gold (GoldAPI): no daily call cap, and the spot price genuinely moves
