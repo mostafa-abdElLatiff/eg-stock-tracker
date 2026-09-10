@@ -41,7 +41,15 @@ for (const [tk, frag] of Object.entries(MAP)) {
   const sw = findSwings(rows,5).lows.slice(-40).map(x=>x.price);
   const computedSup = sw.filter(p=>p<last*0.999).sort((a,b)=>b-a)[0] ?? null;
   let support = (card.support && card.support < last*0.999) ? card.support : computedSup;
-  let stop = (card.stop && card.stop < (support??last)*1.001) ? card.stop : (support ? +(support - atr*0.6).toFixed(2) : null);
+  // Use the STRUCTURALLY CORRECT stop, not whatever happens to be resting.
+  // Flaw found 2026-09-10: this scan ranked MASR at EV 0.84% because it used
+  // the live 8.10 stop, which sits 1.5% away and is therefore hit constantly -
+  // crushing P(T1) to 43%. With a coherent stop below the 7.79 support the
+  // same setup scores 2.10% / 77%. Ranking "is this worth buying" against a
+  // badly-placed stop conflates the quality of the setup with the quality of
+  // the current order, and understates every name whose stop needs fixing.
+  const structural = support ? +(support - atr * 0.6).toFixed(2) : null;
+  let stop = structural ?? ((card.stop && card.stop < last) ? card.stop : null);
   const samples = excursionStats(rows,{horizon:20});
   let ev=null;
   if (stop && rungs.length) ev = ladderExpectedValue({samples, entry:last, stop, targets:rungs.map(r=>r.price), sellPcts:[25,30,30]});

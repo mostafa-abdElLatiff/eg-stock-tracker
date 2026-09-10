@@ -49,6 +49,24 @@ export function probReachBeforeStop(samples, gainPct, riskPct) {
 // Each rung contributes sellPct x gain x P(reach it before the stop).
 // The unsold remainder is valued at the LAST rung reached, and the loss branch
 // is charged at the stop for whatever is still held.
+// KNOWN APPROXIMATIONS - audited 2026-09-10, documented rather than fixed
+// because they pull in OPPOSITE directions and neither is cleanly removable
+// from daily bars alone. Stated here so nobody reads the output as exact.
+//
+// 1. INTRABAR AMBIGUITY (makes EV too LOW). When one bar's high reaches the
+//    target and its low reaches the stop, daily data cannot say which came
+//    first. probReachBeforeStop checks the stop first, so it counts as
+//    stopped. Deliberately pessimistic - it understates P(target) for wide-
+//    range names, which errs toward not buying.
+//
+// 2. NO POST-TRANCHE STOP (makes EV too HIGH). pStop is the probability of
+//    being stopped WITHOUT first reaching rung 1. If rung 1 is reached and
+//    25% is sold, the remaining 75% can still be stopped later - and that
+//    path is not charged anywhere. Errs toward buying.
+//
+// The two partly cancel, which is why the model has held up in practice, but
+// the EV figure is a RANKING signal, not a forecast of return. Treat a 0.3pp
+// gap between two names as noise; treat a 2pp gap as real.
 export function ladderExpectedValue({ samples, entry, stop, targets, sellPcts }) {
   const riskPct = (entry - stop) / entry;
   const rungs = targets.map((price, i) => {
