@@ -49,6 +49,32 @@ export function probReachBeforeStop(samples, gainPct, riskPct) {
 // Each rung contributes sellPct x gain x P(reach it before the stop).
 // The unsold remainder is valued at the LAST rung reached, and the loss branch
 // is charged at the stop for whatever is still held.
+// *** THE BIGGEST LIMITATION, MEASURED 2026-09-11 ***
+//
+// Every probability this file produces is computed from ONE YEAR of bars,
+// because one year is all the free data sources give. That year has been a
+// strong bull market, so the base rates are systematically OPTIMISTIC - and
+// the further the target, the worse it gets.
+//
+// Measured on ETEL against seven years pulled from investing.com through a
+// browser session, same targets and same stop:
+//
+//     P(target)     1 year    7 years
+//     +2.9%           87%        77%
+//     +5%             83%        63%
+//     +10%            61%        38%
+//     +15%            40%        20%
+//     +20%            28%        10%
+//
+// P(+20%) is overstated by nearly THREE TIMES. The cause is visible in ETEL's
+// yearly returns: 2019 -25%, 2020 +17%, 2021 +41%, 2022 +50%, 2023 +52%,
+// 2024 -14%, 2025 +90%, 2026 +92%. The single year in the sample is one of
+// the two best in eight.
+//
+// Until longer history is loaded, read every P() here as a CEILING, and treat
+// distant targets with particular suspicion. The 7-year figures above are the
+// honest ones for ETEL.
+//
 // KNOWN APPROXIMATIONS - audited 2026-09-10, documented rather than fixed
 // because they pull in OPPOSITE directions and neither is cleanly removable
 // from daily bars alone. Stated here so nobody reads the output as exact.
