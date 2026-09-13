@@ -24,6 +24,12 @@ const MAP = {
  MASR:"Madinet Nasr", MGHD:"Misr El Gadida", ORAS:"Orascom Construction", ORHD:"Orascom Hotels",
  ORWE:"Oriental Weavers", PHDC:"Palm Hills", RACC:"Raya Contact Center", RAYA:"Raya Holding",
  SCEM:"Sinai Cement", TMGH:"T M G Holding", TAQA:"TAQA Arabia", TALM:"Taaleem", ETEL:"Telecom Egypt",
+ // Bootstrapped 2026-09-10 and backfilled to a full year from EODHD the same
+ // day - before that they had ~50 bars, too few for an MA200 or a usable
+ // expected-value base rate.
+ KORA:"Korra Energy", EASB:"Egyptian Arabian Themar", AFDI:"Al Ahly Development",
+ CAED:"Cairo Educational", EEII:"Arab Engineering", ISMA:"Ismailia Misr Poultry",
+ ISMQ:"Iron and Steel Mines", MTIE:"MM Group",
 };
 const HELD = new Set(["ADIB","COMI","EFIH","PHAR","EFID","MASR","ORAS","ORHD","RAYA","TMGH","ETEL"]);
 const files = readdirSync(DIR).filter(f=>f.endsWith(".csv"));
