@@ -8,11 +8,21 @@ on:
     # EGX trading hours are 10:00-14:30
     # Cairo, Sun-Thu. Two cadences, not three:
     #
-    # Gold (GoldAPI): no daily call cap, and the spot price genuinely moves
-    # intraday, so it refreshes every 10 min across the whole session,
-    # 08:00-12:30 UTC. A couple of runs land just after the 12:30 UTC
-    # (14:30 Cairo) close - harmless, same closing price refetched.
-    - cron: "*/10 8-12 * * 0-4"
+    # Gold (GoldAPI): no daily call cap, and spot genuinely moves intraday.
+    #
+    # This WAS "*/10 8-12" - every 10 minutes across the session, ~30 runs a
+    # day. It never happened. Measured 2026-09-13 over six sessions, the whole
+    # workflow produced 3-4 runs a DAY, not 30: GitHub schedules are
+    # best-effort and a high-frequency cron is the first thing dropped under
+    # load. Every run reported success, so nothing ever flagged it - the same
+    # blind spot that hid the daily-brief crash for two days. A green tick means
+    # "the run that happened worked", never "the runs you expected happened".
+    #
+    # */30 is set because it is roughly what was actually being delivered, so
+    # the file now describes real behaviour instead of an aspiration. If finer
+    # granularity ever matters, it needs a scheduler that guarantees delivery -
+    # not a smaller number here.
+    - cron: "*/30 8-12 * * 0-4"
     # Funds (snduk) AND stocks (EODHD) share this post-close schedule -
     # confirmed live that EODHD's free tier has no intraday EGX data at all
     # (real-time `close` comes back "NA"; only `previousClose` is usable),
