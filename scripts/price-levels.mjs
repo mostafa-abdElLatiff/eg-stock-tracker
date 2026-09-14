@@ -32,6 +32,7 @@
 
 import { readFileSync, readdirSync } from "fs";
 import { parseCsv, computeATR, findSwings } from "./csv-technicals.mjs";
+import { clusterPivots, assertValid } from "./cluster-levels.mjs";
 import { csvFileFor } from "./tickers.mjs";
 
 const ROOT = new URL("../../", import.meta.url).pathname;
@@ -45,15 +46,13 @@ export function priceLevels(rows, opts = {}) {
   // --- cluster pivots into levels
   const pivots = [...highs.map((h) => ({ ...h, kind: "high" })), ...lows.map((l) => ({ ...l, kind: "low" }))]
     .sort((a, b) => a.price - b.price);
-  const clusters = [];
-  for (const p of pivots) {
-    const c = clusters[clusters.length - 1];
-    if (c && p.price - c.prices[c.prices.length - 1] <= tol) {
-      c.prices.push(p.price); c.dates.push(p.date); c.kinds.push(p.kind);
-    } else {
-      clusters.push({ prices: [p.price], dates: [p.date], kinds: [p.kind] });
-    }
-  }
+  // Complete-linkage clustering, width-capped at tol. The previous inline
+  // single-linkage loop CHAINED: it compared each pivot to the last one added,
+  // so clusters grew without bound. Measured 2026-09-14, it exceeded its own
+  // tolerance on every name tested - MASR 2x, COMI 4x, ARCC 8x, AMOC 20x - so
+  // a "level" was often a blob many times wider than one ATR. See cluster-levels.mjs.
+  const clusters = clusterPivots(pivots, tol);
+  assertValid(clusters, tol, "priceLevels");
 
   // --- volume at price, over the same window
   const allLow = Math.min(...rows.map((r) => r.low)), allHigh = Math.max(...rows.map((r) => r.high));

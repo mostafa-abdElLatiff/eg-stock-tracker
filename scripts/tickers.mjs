@@ -60,9 +60,15 @@ export function csvFileFor(ticker) {
   const pre = csvPrefix[t];
   if (!pre) throw new Error(`No csvPrefix for ${t} - add it to webapp/scripts/tickers.mjs. Do NOT skip it silently.`);
   const dir = `${ROOT}price-history`;
-  const f = readdirSync(dir).find((x) => x.startsWith(pre) && x.endsWith(".csv"));
-  if (!f) throw new Error(`csvPrefix "${pre}" for ${t} matches no file in price-history/. Bootstrap it first.`);
-  return `${dir}/${f}`;
+  const hits = readdirSync(dir).filter((x) => x.startsWith(pre) && x.endsWith(".csv"));
+  if (!hits.length) throw new Error(`csvPrefix "${pre}" for ${t} matches no file in price-history/. Bootstrap it first.`);
+  // AMBIGUITY IS AN ERROR, NOT A COIN FLIP. On 2026-09-14 a fetcher wrote
+  // "Abu Dhabi Stock Price History.csv" beside the existing "Abu Dhabi Islamic
+  // Bank Stock Price History.csv" - 20 such pairs - and this function would have
+  // silently returned whichever readdirSync listed first. Every downstream level,
+  // stop and target would have depended on filesystem ordering.
+  if (hits.length > 1) throw new Error(`csvPrefix "${pre}" for ${t} is AMBIGUOUS - matches ${hits.length} files: ${hits.join(", ")}. Make the prefix unique or remove the duplicate.`);
+  return `${dir}/${hits[0]}`;
 }
 export const companyFor = (t) => company[t.toUpperCase()] ?? null;
 export const eodhdFor  = (t) => eodhd[t.toUpperCase()] ?? null;
