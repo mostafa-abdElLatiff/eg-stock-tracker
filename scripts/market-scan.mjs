@@ -18,14 +18,37 @@
 //
 // Usage: node market-scan.mjs [--sector "Finance"] [--top 10] [--json out.json]
 
-import { readFileSync, writeFileSync } from "fs";
+import { readFileSync, writeFileSync, readdirSync } from "fs";
 import { fairValue } from "./fair-value.mjs";
 
 const ROOT = new URL("../../", import.meta.url).pathname;
-const JOB = process.env.CLAUDE_JOB_DIR;
+// Universe comes from journal/universe.json - committed and dated. It used to
+// come from a session scratch directory, which on 2026-09-14 produced a buy
+// ranking quoting COMI at 138.17 (it had closed 133.32) and listing EFIH on the
+// day that position was stopped out. The guard below makes a stale file loud
+// instead of silent.
 const fun = JSON.parse(readFileSync(`${ROOT}journal/fundamentals.json`, "utf8")).data;
 const fin = JSON.parse(readFileSync(`${ROOT}journal/financials.json`, "utf8")).data;
-const uni = Object.fromEntries(JSON.parse(readFileSync(`${JOB}/tmp/universe.json`, "utf8")).map((r) => [r.name, r]));
+const uniRaw = JSON.parse(readFileSync(`${ROOT}journal/universe.json`, "utf8"));
+const uni = Object.fromEntries((uniRaw.rows ?? uniRaw).map((r) => [r.name, r]));
+// STALENESS GUARD. Compare the universe date against the newest bar on disk.
+// A ranking built on prices older than the data we already hold is worse than
+// no ranking, because it looks authoritative.
+{
+  const files = readdirSync(`${ROOT}price-history`).filter((f) => f.endsWith(".csv"));
+  let newest = "";
+  for (const f of files) {
+    const first = readFileSync(`${ROOT}price-history/${f}`, "utf8").split("\n")[1] || "";
+    const m = /^"(\d{2})\/(\d{2})\/(\d{4})"/.exec(first);
+    if (m) { const iso = `${m[3]}-${m[1]}-${m[2]}`; if (iso > newest) newest = iso; }
+  }
+  const uDate = uniRaw.fetched ?? "unknown";
+  if (newest && uDate !== "unknown" && uDate < newest) {
+    console.error(`\n!!! STALE UNIVERSE: journal/universe.json is dated ${uDate} but price history runs to ${newest}.`);
+    console.error(`!!! Run: cd bot && node fetch-universe.mjs   - refusing to print a ranking on stale prices.\n`);
+    process.exit(1);
+  }
+}
 
 const KE = 0.25;                      // cost of equity at rf 18% + beta 1 x ERP 7%
 const BANKS = new Set(["COMI","ADIB","HRHO","EXPA","QNBE","CIEB","SAUD","FAIT","ADCI","HDBK","CANA","ATLC"]);
