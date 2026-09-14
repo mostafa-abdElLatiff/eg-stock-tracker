@@ -64,13 +64,21 @@ export function refreshLevels(ticker) {
 
   const below = levels.filter((l) => l.price < last).sort((a, b) => b.price - a.price);
   const above = levels.filter((l) => l.price > last).sort((a, b) => a.price - b.price);
-  const support = below.find((l) => l.strength >= CONFIRMED) ?? null;
+  // RELEVANCE BOUND. A defended level 50% below the price is not support, it is
+  // history. ADIB ran 1.53 -> 51.40 over ten years, so every level within 30% of
+  // today is 1-2 touches and the nearest strength-3 cluster sits at 24.64, -54.7%.
+  // Reporting that as "support" implies a floor that is not operative. Past this
+  // bound the honest answer is that no defended level is nearby.
+  const RELEVANCE = 0.20;
+  const candidate = below.find((l) => l.strength >= CONFIRMED) ?? null;
+  const support = (candidate && (last - candidate.price) / last <= RELEVANCE) ? candidate : null;
+  const supportFar = (candidate && !support) ? candidate : null;
   const resistance = above.find((l) => l.strength >= CONFIRMED) ?? above[0] ?? null;
 
   return {
     ticker, last, atr, bars: rows.length, asOf: rows[rows.length - 1].date,
     poc: highestVolumePrice,
-    support, resistance,
+    support, supportFar, resistance,
     nearestBelow: below[0] ?? null,          // may be weaker than `support`
     // What is behind the chosen support if it gives way - the question the
     // old pivot-only levels could not answer at all.
