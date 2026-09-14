@@ -32,6 +32,7 @@
 
 import { readFileSync, readdirSync } from "fs";
 import { parseCsv, computeATR, findSwings } from "./csv-technicals.mjs";
+import { csvFileFor } from "./tickers.mjs";
 
 const ROOT = new URL("../../", import.meta.url).pathname;
 
@@ -111,18 +112,8 @@ const isMain = process.argv[1] && import.meta.url.endsWith(process.argv[1].split
 if (isMain) {
   const ticker = (process.argv[2] || "").toUpperCase();
   const csvArg = process.argv.includes("--csv") ? process.argv[process.argv.indexOf("--csv") + 1] : null;
-  const MAP = { ENGC:"Industrial Engineering", EXPA:"Export Development", ORAS:"Orascom Construction",
-    ORHD:"Orascom Hotels", MASR:"Madinet Nasr", ETEL:"Telecom Egypt", COMI:"Commercial Int",
-    TMGH:"T M G", EFIH:"E-finance", ADIB:"Abu Dhabi", PHAR:"EIPICO", RAYA:"Raya Holding",
-    EFID:"Edita", PHDC:"Palm Hills" };
-  let rows;
-  if (csvArg) rows = parseCsv(csvArg);
-  else {
-    const files = readdirSync(`${ROOT}price-history`);
-    const f = files.find((x) => x.startsWith(MAP[ticker] ?? "___"));
-    if (!f) { console.error(`No CSV for ${ticker}. Pass --csv <path>.`); process.exit(1); }
-    rows = parseCsv(`${ROOT}price-history/${f}`);
-  }
+  // ticker -> file now comes from the ONE registry, tickers.mjs
+  const rows = csvArg ? parseCsv(csvArg) : parseCsv(csvFileFor(ticker));
   const { last, atr, levels, highestVolumePrice } = priceLevels(rows);
   console.log(`${ticker || csvArg}  close ${last}  ATR ${atr.toFixed(2)} (${(atr / last * 100).toFixed(1)}%)  ${rows.length} bars`);
   console.log(`Heaviest trading of the year happened around ${highestVolumePrice} - the price most holders have a basis near.\n`);
