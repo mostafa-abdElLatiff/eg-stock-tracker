@@ -28,7 +28,7 @@ const ROOT = new URL("../../", import.meta.url).pathname;
 export const csvPrefix = {
   ABUK:"Abu Qir", ADIB:"Abu Dhabi", AFDI:"Al Ahly Development", AMOC:"Alexandria Mineral Oils",
   ARCC:"Arabian Cement", CAED:"Cairo Educational", CLHO:"Cleopatra", COMI:"Commercial Int",
-  EASB:"Egyptian Arabian Themar", EAST:"Eastern Tobacco", EEII:"Arab Engineering", EFID:"Edita",
+  EASB:"Egyptian Arabian Themar", EAST:"Eastern Tobacco", EGAL:"Egypt Aluminium", EEII:"Arab Engineering", EFID:"Edita",
   EFIH:"E-finance", EMFD:"Emaar Misr", ENGC:"Industrial Engineering", ETEL:"Telecom Egypt",
   EXPA:"Export Development", FWRY:"Fawry", GBCO:"GB AUTO", HELI:"Misr El Gadida",
   HRHO:"EFG Hermes", ISMA:"Ismailia Misr Poultry", ISMQ:"Iron and Steel Mines", ISPH:"Ibnsina",
@@ -42,7 +42,8 @@ export const csvPrefix = {
 export const company = {
   ABUK:"Abu Qir Fertilizers", ADIB:"Abu Dhabi Islamic Bank Egypt", AMOC:"Alexandria Mineral Oils",
   ARCC:"Arabian Cement", CLHO:"Cleopatra Hospital", COMI:"Commercial International Bank Egypt",
-  EAST:"Eastern Tobacco", EFID:"Edita Food", EFIH:"e-finance Egypt", ENGC:"Industrial Engineering Company",
+  EAST:"Eastern Tobacco", EFID:"Edita Food", EFIH:"e-finance Egypt", EGAL:"Egypt Aluminium",
+  ENGC:"Industrial Engineering Company",
   ETEL:"Telecom Egypt", EXPA:"Export Development Bank Egypt", FWRY:"Fawry", GBCO:"GB Auto",
   HRHO:"EFG Hermes", ISPH:"Ibnsina Pharma", JUFO:"Juhayna Food", MASR:"Madinet Masr",
   MCQE:"Misr Cement Qena", MFPC:"MOPCO Misr Fertilizers", ORAS:"Orascom Construction",
