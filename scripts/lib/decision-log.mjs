@@ -83,6 +83,34 @@ export function latestDecision(ticker, field) {
   return all.length ? all[all.length - 1] : null;
 }
 
+/**
+ * Proposals still awaiting placement at the broker.
+ *
+ * A superseded entry must NEVER appear here. On 2026-09-20 a first listing of
+ * this filtered on status === "proposed" alone and surfaced a corrected ORAS
+ * target ladder as if it were still standing - i.e. the append-only log was
+ * about to hand back the very entry its correction existed to retract. An
+ * entry is superseded when a LATER entry for the same ticker+field references
+ * its timestamp, or simply supersedes it by being later and not itself
+ * proposed.
+ */
+export function standingProposals(ticker = null) {
+  const all = load().entries;
+  const superseded = new Set(all.map((e) => e.supersedes).filter(Boolean));
+  const out = [];
+  for (let i = 0; i < all.length; i++) {
+    const e = all[i];
+    if (e.status !== "proposed") continue;
+    if (superseded.has(e.at)) continue;
+    if (ticker && e.ticker !== ticker.toUpperCase()) continue;
+    // A later entry for the same ticker+field replaces this one regardless of
+    // whether it bothered to set `supersedes`.
+    if (all.slice(i + 1).some((x) => x.ticker === e.ticker && x.field === e.field)) continue;
+    out.push(e);
+  }
+  return out;
+}
+
 /** Mark a proposed decision as actually placed at the broker. */
 export function markPlaced(ticker, field, note = "") {
   const log = load();
