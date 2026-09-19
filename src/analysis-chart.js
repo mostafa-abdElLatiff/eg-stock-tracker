@@ -7,6 +7,7 @@
 // correctly instead of me re-deriving that logic by hand.
 
 import { createChart, ColorType, AreaSeries, LineSeries } from "lightweight-charts";
+import { exitPlan } from "../scripts/lib/exit-plan.mjs";
 
 export function computeSMA(arr, n) {
   if (arr.length < n) return null;
@@ -116,25 +117,13 @@ export function mountChart(container, data) {
   return chart;
 }
 
-// Splits each target into a partial-sell % and where the stop moves to once
-// it's hit, same ladder-sizing convention as the Artifact (1 target -> sell
-// 70% and trail the rest; 2 -> 35/50; 3 -> 25/30/30; 4 -> 20/20/25/20).
-export function targetPlan(data, avgCost) {
-  const targets = data.targets || [];
-  const n = targets.length;
-  const pctByN = { 1: [70], 2: [35, 50], 3: [25, 30, 30], 4: [20, 20, 25, 20] };
-  // sellPcts is a per-ticker override for when the default ladder doesn't
-  // fit - e.g. MASR: target 1 cut to 20% (RSI 75, already extended) with
-  // the freed 15% moved to the trailing remainder instead of target 2,
-  // since target 2 sits well below a real (if thinly-sourced) fundamental
-  // target and the user wants more shares riding past it, not locked in.
-  const pcts = data.sellPcts || pctByN[n] || targets.map(() => Math.round(100 / n));
-  return targets.map((price, i) => ({
-    price,
-    sellPct: pcts[i],
-    newStop: i === 0 ? (avgCost ?? data.support ?? data.stop ?? null) : targets[i - 1],
-  }));
-}
+// targetPlan lived here and defined its own stop-ratchet - move to breakeven
+// after target 1, then trail to the previous target. Neither was ever tested,
+// and nothing server-side could see it. Measured 2026-09-19 over 219 breakouts,
+// breakeven was the WORST of six policies: 82.2% stopped out, 17.8% positive,
+// against 29.2% for leaving the stop alone. The logic now lives in
+// scripts/lib/exit-plan.mjs so the browser and the analysis share one copy.
+
 
 
 // A one-time reference block, not per-card - the fundamental/technical
@@ -186,7 +175,7 @@ export function buildAnalysisCard(ticker, data, avgCost, avgCostIsLive = true, s
         : "mixed vs. averages"
       : "not enough data for a 10-day average yet";
 
-  const plan = targetPlan(data, avgCost);
+  const plan = exitPlan(data);
   const sumPct = plan.reduce((s, p) => s + (p.sellPct || 0), 0);
   const trailPct = 100 - sumPct;
 
@@ -209,10 +198,10 @@ export function buildAnalysisCard(ticker, data, avgCost, avgCostIsLive = true, s
     const gainLabel = egpGain != null ? ` (≈ ${egpGain >= 0 ? "+" : ""}${Math.round(egpGain).toLocaleString()} EGP)` : "";
     const basis = Array.isArray(data.targetBasis) ? data.targetBasis.find((b) => b.price === p.price) : null;
     const basisLabel = basis ? `<div class="muted" style="font-size:0.7rem;font-weight:400">${basis.basis}</div>` : "";
-    exitRows += `<tr><td class="label">Target ${i + 1} — sell ${p.sellPct}%${gainLabel}${basisLabel}</td><td class="num">${p.price.toFixed(2)}</td><td class="label num">${pct(p.price, last)}</td><td class="label num">${pct(p.price, avgCost)}</td><td class="label">stop → ${p.newStop != null ? p.newStop.toFixed(2) : "—"}</td></tr>`;
+    exitRows += `<tr><td class="label">Target ${i + 1} — sell ${p.sellPct}%${gainLabel}${basisLabel}</td><td class="num">${p.price.toFixed(2)}</td><td class="label num">${pct(p.price, last)}</td><td class="label num">${pct(p.price, avgCost)}</td><td class="label" title="${p.stopNote}">stop stays ${p.stopAfter != null ? p.stopAfter.toFixed(2) : "—"}</td></tr>`;
   });
   if (plan.length) {
-    exitRows += `<tr><td class="label">Remainder — trail stop</td><td class="num">${trailPct}%</td><td class="label" colspan="3">under each new swing low</td></tr>`;
+    exitRows += `<tr><td class="label">Remainder — hold</td><td class="num">${trailPct}%</td><td class="label" colspan="3">stop unchanged; trailing it under each swing low was measured at 86.8% stopped out vs 68.9% leaving it</td></tr>`;
   }
   if (data.fundamentalTarget) {
     exitRows += row("Fundamental target (context)", data.fundamentalTarget.toFixed(2), pct(data.fundamentalTarget, last), pct(data.fundamentalTarget, avgCost));

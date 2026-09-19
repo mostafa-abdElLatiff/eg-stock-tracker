@@ -27,6 +27,7 @@ import { csvFileFor } from "./tickers.mjs";
 import { relativeVolume, VOLUME_WINDOW, sellFractionOnBreak } from "./lib/volume.mjs";
 import { riskFor, gainFor, buyCost, thndrFee } from "./lib/money.mjs";
 import { latestVsPrior } from "./lib/fundamentals.mjs";
+import { stopAllowed, hasOpenCorporateAction } from "./lib/corporate-actions.mjs";
 
 const ROOT = new URL("../../", import.meta.url).pathname;
 const POS = JSON.parse(readFileSync(`${ROOT}journal/positions.json`, "utf8"));
@@ -97,7 +98,11 @@ function analyse(tk, group) {
 
   // Stop is anchored to the ENTRY, not to spot.
   const floor = stopFor({ ...map, last: entry });
-  const stop = held?.stop ?? (floor ? floor.stop : null);
+  // A pending bonus issue divides the price; a resting stop fires on the
+  // arithmetic. One check, so it cannot be forgotten at the moment it matters.
+  const ca = hasOpenCorporateAction(tk);
+  const gate = stopAllowed(tk, floor ? floor.stop : null);
+  const stop = held?.stop ?? gate.stop;
   const ladder = buildLadder(rows, { maxRungs: 3 }).rungs.map((r) => +r.price.toFixed(2)).filter((p) => p > entry);
 
   const out = {
@@ -112,6 +117,8 @@ function analyse(tk, group) {
     atrPct: v((computeATR(rows, 14) / last) * 100, `ATR as a percent of price ${last} - how far this stock moves on an ordinary day`),
     relativeVolume: v(relativeVolume(rows), `last bar's volume / mean of the prior ${VOLUME_WINDOW} bars (lib/volume.mjs; window justified there)`),
     sellOnBreak: sellFractionOnBreak(rows),
+    corporateAction: ca.open ? { ...ca.action, why: ca.why } : null,
+    stopBlocked: gate.blocked ? gate.why : null,
     stop: stop == null ? null : {
       value: stop,
       how: held?.stop != null

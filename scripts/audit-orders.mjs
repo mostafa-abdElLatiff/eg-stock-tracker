@@ -30,6 +30,7 @@ import { readFileSync, readdirSync } from "fs";
 import { parseCsv } from "./csv-technicals.mjs";
 import { priceLevels } from "./price-levels.mjs";
 import { stopFor } from "./stop-rule.mjs";
+import { stopAllowed } from "./lib/corporate-actions.mjs";
 import { thndrFee as FEE } from "./lib/money.mjs";
 
 const ROOT = new URL("../../", import.meta.url).pathname;
@@ -63,6 +64,7 @@ for (const p of pos.stocks) {
   // 39.45, 39.89 and 39.90 in the same week. Verdicts stay local (they answer
   // "is the resting order coherent?"); only the SUGGESTION is centralised.
   const ruled = stopFor({ last, atr, levels });
+  const caGate = stopAllowed(p.ticker, ruled ? ruled.stop : null);
 
   const sup = levels.filter((l) => l.price < last).sort((a, b) => b.price - a.price);
   const res = levels.filter((l) => l.price > last).sort((a, b) => a.price - b.price);
@@ -81,17 +83,17 @@ for (const p of pos.stocks) {
     let verdict, why, suggest = null;
     if (!anchor) {
       verdict = "EDIT"; why = `stop is ABOVE every support - nothing defends it`;
-      suggest = ruled ? ruled.stop : null;
+      suggest = caGate.stop;
     } else {
       const gapATR = (anchor.price - p.stop) / atr;
       if (gapATR < NOISE_ATR) {
         verdict = "EDIT";
         why = `only ${gapATR.toFixed(2)}x ATR below the ${anchor.price} support (${anchor.touches} touches${anchor.flipped ? ", flipped" : ""}) - inside its noise`;
-        suggest = ruled ? ruled.stop : null;
+        suggest = caGate.stop;
       } else if (gapATR > 2.0 && below && p.stop - below.price > atr * 0.5) {
         verdict = "EDIT";
         why = `sits ${gapATR.toFixed(1)}x ATR below ${anchor.price} and ${((p.stop - below.price) / atr).toFixed(1)}x ATR above ${below.price} - in open air between two levels`;
-        suggest = ruled ? ruled.stop : null;
+        suggest = caGate.stop;
       } else {
         verdict = "KEEP";
         why = `${gapATR.toFixed(2)}x ATR below the ${anchor.price} support (${anchor.touches} touches${anchor.flipped ? ", flipped" : ""}, ${anchor.volPct}% of year's volume) - clear of its noise`;
