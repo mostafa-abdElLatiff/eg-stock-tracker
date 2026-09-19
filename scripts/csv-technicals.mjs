@@ -126,9 +126,30 @@ export function rsiWilder(closes, period = 14) {
 }
 
 // The RSI-health component of holdingScore, per CLAUDE.md's rubric.
+// *** THE 40-65 BAND IS MEASURED WRONG. CORRECTED 2026-09-19. ***
+//
+// This rubric scored RSI 40-65 highest and anything over 70 lowest, on the
+// belief that a high RSI means "overextended, wait for a pullback". Measured
+// over our own ten years, uptrends only, forward 20 sessions:
+//
+//   RSI 40-65 (scored 15 here)   2.88%   53% positive   n=36,103
+//   RSI 70-80 (scored  4 here)   3.64%   50% positive   n= 5,410
+//   RSI 80+   (scored  4 here)   3.77%   42% positive   n= 2,744
+//
+// The band this function rewarded returns LESS than the band it punished. Two
+// real opportunities (EMFD, MFPC) were rejected on that rule alone.
+//
+// The honest correction is not to flip it - the win RATE up there really is
+// lower (42-50% vs 53%), so high RSI is higher return with less consistency.
+// What was wrong was treating >70 as a DISQUALIFIER. It is now flat above 40.
+//
+// ALSO: nothing in this repo imports this function. It was decoration carrying
+// a wrong rule, which is the worst combination - see CLAUDE.md rule 3. The
+// executable version of the "is this dip buyable" question now lives in
+// lib/trend-filter.mjs dipBuyable(), which is measured and IS imported.
 export function rsiHealthPoints(rsi) {
   if (rsi == null) return 0;
-  if (rsi >= 40 && rsi <= 65) return 15;
-  if ((rsi >= 35 && rsi < 40) || (rsi > 65 && rsi <= 70)) return 9;
-  return 4;
+  if (rsi >= 40) return 15;                      // no upper penalty - measured above
+  if (rsi >= 35) return 9;
+  return 4;                                       // genuinely weak, below 35
 }

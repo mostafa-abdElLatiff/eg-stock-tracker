@@ -20,6 +20,11 @@
 
 import { readFileSync, writeFileSync, readdirSync } from "fs";
 import { fairValue } from "./fair-value.mjs";
+import { pathToFileURL } from "url";
+import { parseCsv } from "./csv-technicals.mjs";
+import { csvFileFor } from "./tickers.mjs";
+import { weeklyTrend, dipBuyable } from "./lib/trend-filter.mjs";
+import { allFundamentals } from "./lib/fundamentals.mjs";
 
 const ROOT = new URL("../../", import.meta.url).pathname;
 // Universe comes from journal/universe.json - committed and dated. It used to
@@ -28,7 +33,12 @@ const ROOT = new URL("../../", import.meta.url).pathname;
 // day that position was stopped out. The guard below makes a stale file loud
 // instead of silent.
 const fun = JSON.parse(readFileSync(`${ROOT}journal/fundamentals.json`, "utf8")).data;
-const fin = JSON.parse(readFileSync(`${ROOT}journal/financials.json`, "utf8")).data;
+// READS THROUGH THE REGISTRY. Opening journal/financials.json directly here is
+// what made ORAS look absent on 2026-09-19 - four times, twice in one day -
+// while its data sat in journal/oras-financials.json, fetched 2026-09-17 and
+// carrying a gate verdict of PASSES. lib/fundamentals.mjs consults EVERY store;
+// the raw file is only one of them. CLAUDE.md rule 1 and rule 6 both.
+const fin = allFundamentals();
 const uniRaw = JSON.parse(readFileSync(`${ROOT}journal/universe.json`, "utf8"));
 const uni = Object.fromEntries((uniRaw.rows ?? uniRaw).map((r) => [r.name, r]));
 // STALENESS GUARD. Compare the universe date against the newest bar on disk.
@@ -187,6 +197,15 @@ function entry(t, q) {
 // exactly 100 - a series of limit-up days on a share count that barely trades.
 // These are exclusions, not penalties, because a small deduction still leaves
 // them ranked above real businesses.
+const _barCache = new Map();
+function barsFor(t) {
+  if (!_barCache.has(t)) {
+    try { _barCache.set(t, parseCsv(csvFileFor(t))); }
+    catch { _barCache.set(t, null); }          // no CSV yet - weekly test returns unknown
+  }
+  return _barCache.get(t);
+}
+
 function investable(t) {
   const f = fun[t], m = uni[t];
   const fl = (f?.float && f?.sharesOut) ? f.float / f.sharesOut : null;
@@ -200,6 +219,24 @@ function investable(t) {
   // TURNOVER is the honest test, and it is measured, not reported.
   if (liq < 2e6) return `turnover ${(liq/1e6).toFixed(1)}M EGP/day - too illiquid to enter or exit`;
   if ((m?.RSI ?? 0) > 85) return `RSI ${m.RSI.toFixed(0)} - a limit-up run, not a price`;
+
+  // WEEKLY VETO. Measured 2026-09-19 over 23,351 samples: the SAME daily uptrend
+  // is worth +2.91pp over 120 sessions when the weekly agrees and -6.52pp when it
+  // does not - a 9.4pp spread at the horizon this portfolio actually holds. A
+  // daily uptrend with no weekly check is worth nothing (-0.29pp). Full evidence
+  // in lib/trend-filter.mjs. This is an EXCLUSION, not a deduction, for the same
+  // reason as the two above: a small penalty still leaves the name ranked above
+  // real businesses.
+  //
+  // UNKNOWN IS NOT A PASS. weeklyTrend() returns up:null when a name is too new
+  // to have 60 weekly bars, and that is excluded too - VALU listed in mid-2025
+  // and its 55-week average is computed from barely more weeks than it has.
+  const bars = barsFor(t);
+  if (bars) {
+    const w = weeklyTrend(bars);
+    if (w.up === false) return `weekly trend not confirmed - ${w.why}`;
+    if (w.up === null)  return `weekly trend UNKNOWN - ${w.why}`;
+  }
   return null;
 }
 
@@ -211,23 +248,31 @@ export function scan() {
     if (bar) { excluded.push({ t, reason: bar }); continue; }
     const q = quality(t); if (!q) continue;
     const e = entry(t, q);
+    const bars = barsFor(t);
+    const dip = bars ? dipBuyable(bars) : { buyable: null, why: "no bars" };
     out.push({ t, sector: fun[t]?.sector ?? "?", name: fun[t]?.description ?? "",
                quality: q.score, entry: e.score, ...e, qparts: q.parts, qflags: q.flags,
-               isBank: q.isBank, roe: q.roe, growth: q.growth });
+               isBank: q.isBank, roe: q.roe, growth: q.growth,
+               dipBuyable: dip.buyable, dipWhy: dip.why });
   }
   scan.excluded = excluded;
   return out;
 }
 
-const isMain = process.argv[1] && import.meta.url.endsWith(process.argv[1].split("/").pop());
+// Run-directly check. Was `import.meta.url.endsWith(argv[1].split("/").pop())`, which is a
+// SUFFIX match on the basename - so any caller named levels.mjs made
+// price-levels.mjs think it was the entry point and run its CLI, throwing on an
+// empty ticker. Found 2026-09-19 when a scratch script called levels.mjs blew up
+// inside priceLevels(). pathToFileURL comparison is exact.
+const isMain = process.argv[1] && import.meta.url === pathToFileURL(process.argv[1]).href;
 if (isMain) {
   const rows = scan();
   const i = process.argv.indexOf("--json");
   if (i > 0) writeFileSync(process.argv[i + 1], JSON.stringify(rows, null, 1));
   rows.sort((a, b) => (b.quality + b.entry) - (a.quality + a.entry));
   console.log(`${rows.length} names scored.\n`);
-  console.log(`  tkr     QUAL  ENTRY   price    fair   margin  agree   RSI  sector`);
+  console.log(`  tkr     QUAL  ENTRY   price    fair   margin  agree   RSI  dip?  sector`);
   for (const r of rows.slice(0, parseInt(process.argv[process.argv.indexOf("--top")+1] ?? "30", 10))) {
-    console.log(`  ${r.t.padEnd(7)} ${String(r.quality).padStart(4)} ${String(r.entry).padStart(6)} ${(r.px??0).toFixed(2).padStart(8)} ${(r.fv??0).toFixed(2).padStart(8)} ${((r.mos>=0?"+":"")+(r.mos??0).toFixed(0)+"%").padStart(8)} ${String(r.band??"-").padEnd(7)} ${(r.rsi??0).toFixed(0).padStart(4)}  ${String(r.sector).slice(0,22)}`);
+    console.log(`  ${r.t.padEnd(7)} ${String(r.quality).padStart(4)} ${String(r.entry).padStart(6)} ${(r.px??0).toFixed(2).padStart(8)} ${(r.fv??0).toFixed(2).padStart(8)} ${((r.mos>=0?"+":"")+(r.mos??0).toFixed(0)+"%").padStart(8)} ${String(r.band??"-").padEnd(7)} ${(r.rsi??0).toFixed(0).padStart(4)}  ${(r.dipBuyable===true?" yes":r.dipBuyable===false?" NO ":"  ? ").padEnd(5)} ${String(r.sector).slice(0,22)}`);
   }
 }

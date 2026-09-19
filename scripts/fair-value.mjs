@@ -33,6 +33,8 @@
 // Usage: node fair-value.mjs TICKER [--rf 0.18] [--erp 0.07] [--g 0.12] [--sensitivity]
 
 import { readFileSync } from "fs";
+import { pathToFileURL } from "url";
+import { fundamentalsFor } from "./lib/fundamentals.mjs";
 
 const ROOT = new URL("../../", import.meta.url).pathname;
 const arg = (n, d) => { const i = process.argv.indexOf(`--${n}`); return i > 0 ? parseFloat(process.argv[i + 1]) : d; };
@@ -57,9 +59,34 @@ const cagr = (last, first, yrs) => (first > 0 && last > 0) ? Math.pow(last / fir
 
 export function fairValue(ticker, opts = {}) {
   const notesPre = [];
-  const fin = JSON.parse(readFileSync(`${ROOT}journal/financials.json`, "utf8")).data[ticker];
+// READS THROUGH THE REGISTRY. Opening journal/financials.json directly here is
+// what made ORAS look absent on 2026-09-19 - four times, twice in one day -
+// while its data sat in journal/oras-financials.json, fetched 2026-09-17 and
+// carrying a gate verdict of PASSES. lib/fundamentals.mjs consults EVERY store;
+// the raw file is only one of them. CLAUDE.md rule 1 and rule 6 both.
+  const _f = fundamentalsFor(ticker);
+  const fin = _f.status === "ok" ? _f : null;
   const fun = JSON.parse(readFileSync(`${ROOT}journal/fundamentals.json`, "utf8")).data[ticker];
   if (!fin) throw new Error(`No financials for ${ticker} - run bot/fetch-financials.mjs ${ticker}`);
+
+  // CURRENCY GUARD. M below assumes statements in EGP millions. ORAS reports in
+  // USD (dual-listed, EGX + Nasdaq Dubai). Without this guard the model read
+  // $6.07bn of revenue as 6.07bn EGP and produced an EPV of 8.58 against an 879
+  // price - a -99% "fair value" that is a unit error, not a valuation. The ORAS
+  // financials file warned about exactly this: "Getting this wrong would have
+  // made every valuation read nonsense."
+  //
+  // REFUSING is deliberate. An FX conversion here would need the rate at each
+  // statement date, not just spot, and a wrong number that looks plausible is
+  // worse than no number. journal/usd-egp.json holds spot 52.12 @ 2026-09-17 and
+  // month-ends back to 2022 if someone wants to build that properly.
+  if (fin.currency && fin.currency !== "EGP") {
+    throw new Error(
+      `${ticker} reports in ${fin.currency}, not EGP, and this model assumes EGP millions. ` +
+      `Refusing rather than printing a number that is wrong by the FX rate. ` +
+      `To fix: convert the statements in ${fin.store} to EGP at the rate for each period ` +
+      `(journal/usd-egp.json has month-ends back to 2022), or add per-period FX handling here.`);
+  }
   const rf = opts.rf ?? RF, erp = opts.erp ?? ERP, gt = opts.g ?? GT;
 
   const shares = fun?.sharesOut;
@@ -258,7 +285,12 @@ export function fairValue(ticker, opts = {}) {
 }
 
 // ---------------------------------------------------------------- CLI
-const isMain = process.argv[1] && import.meta.url.endsWith(process.argv[1].split("/").pop());
+// Run-directly check. Was `import.meta.url.endsWith(argv[1].split("/").pop())`, which is a
+// SUFFIX match on the basename - so any caller named levels.mjs made
+// price-levels.mjs think it was the entry point and run its CLI, throwing on an
+// empty ticker. Found 2026-09-19 when a scratch script called levels.mjs blew up
+// inside priceLevels(). pathToFileURL comparison is exact.
+const isMain = process.argv[1] && import.meta.url === pathToFileURL(process.argv[1]).href;
 if (isMain) {
   const ticker = (process.argv[2] || "").toUpperCase();
   const r = fairValue(ticker);

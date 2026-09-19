@@ -1,4 +1,5 @@
 #!/usr/bin/env node
+import { pathToFileURL } from "url";
 // Two earnings checks the project was missing, both found on 2026-09-11 when
 // Mostafa challenged a claim that ORHD's profit was falling.
 //
@@ -103,7 +104,12 @@ export function earningsQuality(quarterly) {
 // --- CLI. Guarded so the module can be IMPORTED without side effects: this
 // used to open a Supabase connection at import time, so any script that wanted
 // `earningsQuality()` had to carry database credentials it never used.
-const isMain = process.argv[1] && import.meta.url.endsWith(process.argv[1].split("/").pop());
+// Run-directly check. Was `import.meta.url.endsWith(argv[1].split("/").pop())`, which is a
+// SUFFIX match on the basename - so any caller named levels.mjs made
+// price-levels.mjs think it was the entry point and run its CLI, throwing on an
+// empty ticker. Found 2026-09-19 when a scratch script called levels.mjs blew up
+// inside priceLevels(). pathToFileURL comparison is exact.
+const isMain = process.argv[1] && import.meta.url === pathToFileURL(process.argv[1]).href;
 if (!isMain) { /* imported - export only */ } else {
 const { createClient } = await import("@supabase/supabase-js");
 const supabase = createClient(process.env.SUPABASE_URL, process.env.SUPABASE_SERVICE_ROLE_KEY);

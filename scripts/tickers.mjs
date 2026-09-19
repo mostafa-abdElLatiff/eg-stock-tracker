@@ -22,10 +22,15 @@
 //         node tickers.mjs            - print a coverage report
 
 import { readdirSync, existsSync } from "fs";
+import { pathToFileURL } from "url";
 
 const ROOT = new URL("../../", import.meta.url).pathname;
 
 export const csvPrefix = {
+  // Added 2026-09-19: named in a market video, absent from the registry, so
+  // fetch-history.mjs threw rather than silently skipping them. That throw is
+  // the tool working as designed - see the header.
+  ELWA:"El Wadi", OBRI:"El Obour", VALU:"Valu",
   ABUK:"Abu Qir", ADIB:"Abu Dhabi", AFDI:"Al Ahly Development", AMOC:"Alexandria Mineral Oils",
   ARCC:"Arabian Cement", CAED:"Cairo Educational", CIRA:"Cairo Investment", CLHO:"Cleopatra", COMI:"Commercial Int",
   EASB:"Egyptian Arabian Themar", EAST:"Eastern Tobacco", EGAL:"Egypt Aluminium", EEII:"Arab Engineering", EFID:"Edita",
@@ -40,6 +45,7 @@ export const csvPrefix = {
 };
 
 export const company = {
+  ELWA:"El Wadi International for Investment and Development", OBRI:"El Obour for Real Estate Investment", VALU:"Valu",
   ABUK:"Abu Qir Fertilizers", ADIB:"Abu Dhabi Islamic Bank Egypt", AMOC:"Alexandria Mineral Oils",
   ARCC:"Arabian Cement", CLHO:"Cleopatra Hospital", COMI:"Commercial International Bank Egypt",
   CIRA:"Cairo Investment and Development", EAST:"Eastern Tobacco", EFID:"Edita Food", EFIH:"e-finance Egypt", EGAL:"Egypt Aluminium",
@@ -87,7 +93,12 @@ export function coverage() {
   return { missing, orphanFiles: files.filter((f) => !claimed.has(f)), total: Object.keys(csvPrefix).length, files: files.length };
 }
 
-const isMain = process.argv[1] && import.meta.url.endsWith(process.argv[1].split("/").pop());
+// Run-directly check. Was `import.meta.url.endsWith(argv[1].split("/").pop())`, which is a
+// SUFFIX match on the basename - so any caller named levels.mjs made
+// price-levels.mjs think it was the entry point and run its CLI, throwing on an
+// empty ticker. Found 2026-09-19 when a scratch script called levels.mjs blew up
+// inside priceLevels(). pathToFileURL comparison is exact.
+const isMain = process.argv[1] && import.meta.url === pathToFileURL(process.argv[1]).href;
 if (isMain) {
   const c = coverage();
   console.log(`${c.total} tickers mapped, ${c.files} CSVs on disk`);

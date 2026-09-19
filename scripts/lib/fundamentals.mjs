@@ -32,6 +32,7 @@
 //   - coverage() lists holes so they are closed, not narrated.
 
 import { readFileSync, readdirSync, existsSync } from "fs";
+import { pathToFileURL } from "url";
 
 const ROOT = new URL("../../../", import.meta.url).pathname;
 const J = (p) => JSON.parse(readFileSync(ROOT + p, "utf8"));
@@ -73,9 +74,52 @@ function usdEgp() {
  * @returns {{status:"ok", ...}|{status:"not_fetched", checked:string[], next:string}}
  *          Never null - see the header for why.
  */
+// PERMANENT GAP REGISTER. A hole that has already been investigated must not be
+// re-reported as a discovery. ORAS's missing financials were raised FOUR times,
+// twice in one day, because the investigation lived only in chat. See
+// journal/data-gaps.json for the reasoning; this reads it.
+let _gaps = null;
+function gapFor(tk) {
+  if (_gaps === null) {
+    try { _gaps = JSON.parse(readFileSync(new URL("../../../journal/data-gaps.json", import.meta.url), "utf8")).gaps; }
+    catch { _gaps = []; }
+  }
+  return _gaps.find((g) => g.ticker === tk?.toUpperCase() && g.field === "financials") ?? null;
+}
+
+/**
+ * EVERY ticker from EVERY store, merged - the map form of fundamentalsFor().
+ *
+ * Added 2026-09-19. Three scripts (fair-value.mjs, fair-value-board.mjs,
+ * market-scan.mjs) each opened journal/financials.json directly because there
+ * was no exported way to get the whole map. That single file is one of TWO
+ * stores, so all three silently missed every orphan-file ticker - which is how
+ * ORAS looked absent four separate times while its data sat in
+ * journal/oras-financials.json. Rule 1: if the function does not exist, write
+ * it once and document it, so nobody re-derives a third copy.
+ */
+export function allFundamentals() {
+  return all();
+}
+
 export function fundamentalsFor(tk) {
   const rec = all()[tk?.toUpperCase()];
   if (!rec) {
+    const known = gapFor(tk);
+    if (known) {
+      return {
+        status: "unavailable",
+        ticker: tk.toUpperCase(),
+        alreadyInvestigated: true,
+        firstRecorded: known.firstRecorded,
+        lastChecked: known.lastChecked,
+        why: known.whyItIsMissing,
+        attempts: known.attempts,
+        next: known.whatWouldFixIt,
+        consequence: known.consequence,
+        doNot: "This gap is ON RECORD in journal/data-gaps.json. Do not re-report it as newly found, and do not say it has been fixed unless journal/financials.json actually contains the ticker.",
+      };
+    }
     return {
       status: "not_fetched",
       ticker: tk,
@@ -146,7 +190,12 @@ export function coverage(tickers) {
   return { have, missing, pct: (have.length / tickers.length) * 100 };
 }
 
-if (process.argv[1] && import.meta.url.endsWith(process.argv[1].split("/").pop())) {
+// Run-directly check. Was `import.meta.url.endsWith(argv[1].split("/").pop())`, which is a
+// SUFFIX match on the basename - so any caller named levels.mjs made
+// price-levels.mjs think it was the entry point and run its CLI, throwing on an
+// empty ticker. Found 2026-09-19 when a scratch script called levels.mjs blew up
+// inside priceLevels(). pathToFileURL comparison is exact.
+if (process.argv[1] && import.meta.url === pathToFileURL(process.argv[1]).href) {
   const tk = (process.argv[2] || "").toUpperCase();
   console.log(JSON.stringify(tk ? latestVsPrior(tk, parseFloat(process.argv[3]) || null) : coverage(Object.keys(all())), null, 2));
 }

@@ -2,7 +2,34 @@
 // Board-wide ranking: recomputes technicals, ladder and probability-weighted
 // expected value for every ticker with a CSV, using each card's own deliberate
 // support/stop where one exists. Entry is SPOT, so this answers "should I buy
-// this today", not "was the original entry good". Sorted by EV descending.
+// this today", not "was the original entry good".
+//
+// *** DO NOT SORT THIS BOARD BY EV. MEASURED 2026-09-19. ***
+//
+// EV was the sort key until a cross-sectional backtest showed it is ANTI-
+// PREDICTIVE. 94 snapshots, every 20 sessions, 22-45 names each, real pipeline
+// (priceLevels -> stopFor -> buildLadder -> ladderExpectedValue). Top quartile
+// by EV minus bottom quartile, forward return:
+//
+//   horizon            +20d      +60d     +120d
+//   EV (%-of-position)  -1.01pp   -2.79pp   -2.31pp
+//   EV per unit of risk -0.62pp   -1.40pp   -1.79pp
+//   equal-weight        +2.41%    +7.79%   +16.76%   (beats BOTH rankings)
+//
+// The bottom quartile outperformed the top at every horizon, and the gap WIDENS
+// the longer you hold - which is exactly Mostafa's holding period. The cause is
+// structural, not noise: EV charges the downside as pStop x riskPct against
+// POSITION value, so a wide stop is penalised in full. But positions here are
+// sized by RISK (CLAUDE.md section C), so a wide-stop name already gets a
+// smaller position. EV and our sizing rule disagree about the unit.
+//
+// Dividing by risk (evR, now shown) makes the unit coherent and halves the
+// damage, but does NOT make it predictive. So EV stays as a per-trade
+// risk/reward DESCRIPTION and is no longer the ranking.
+//
+// The board now sorts by proximity to a decision point - whichever of the stop
+// or the first target price is nearer - so names needing attention today float
+// up. That claims no forecasting power, which is the point.
 //   node --env-file=.env scripts/scan-board.mjs
 import { readdirSync } from "fs";
 import { csvPrefix, csvFileFor } from "./tickers.mjs";
@@ -66,11 +93,22 @@ for (const tk of Object.keys(MAP)) {
     macdH: macd? +(macd.histogram ?? macd.hist ?? 0).toFixed(3):null,
     support, stop, rungs:rungs.map(r=>+r.price.toFixed(2)),
     ev: ev? +(ev.ev*100).toFixed(2):null, risk: ev? +(ev.riskPct*100).toFixed(1):null,
+    // EV per unit of risk. The coherent unit given we size by risk, not by
+    // position value. Shown for completeness; measured NOT predictive either.
+    evR: ev && ev.riskPct ? +(ev.ev/ev.riskPct).toFixed(2) : null,
     pT1: ev? Math.round(ev.rungs[0].p*100):null, pStop: ev? Math.round(ev.pStop*100):null,
     up1: ev? +(ev.rungs[0].gain*100).toFixed(1):null,
     volRatio: (()=>{const v=relativeVolume(rows); return v==null?null:+v.toFixed(2);})()});
 }
-out.sort((a,b)=>(b.ev??-99)-(a.ev??-99));
-console.log("tk    H date        last     chg%   rsi  ma   macdH    sup     stop   T1     +T1%  P(T1) P(stp) risk%  EV%   vol×");
+// Distance to whichever matters first: the stop below or the first rung above.
+const decisionDist = o => {
+  const d = [];
+  if (o.stop != null) d.push(Math.abs(o.last - o.stop) / o.last);
+  if (o.rungs?.[0] != null) d.push(Math.abs(o.rungs[0] - o.last) / o.last);
+  return d.length ? Math.min(...d) : 99;
+};
+out.sort((a,b)=>decisionDist(a)-decisionDist(b));
+console.log("sorted by DISTANCE TO A DECISION (nearest of stop / T1). EV is descriptive, NOT a ranking - see header.");
+console.log("tk    H date        last     chg%   rsi  ma   macdH    sup     stop   T1     +T1%  P(T1) P(stp) risk%  EV%    evR  vol×");
 for (const o of out) console.log(
- `${o.tk.padEnd(5)} ${o.held?"*":" "} ${o.date} ${String(o.last).padStart(7)} ${String(o.chg).padStart(6)} ${String(o.rsi).padStart(5)} ${o.ma} ${String(o.macdH).padStart(7)} ${String(o.support??"-").padStart(7)} ${String(o.stop??"-").padStart(7)} ${String(o.rungs[0]??"-").padStart(7)} ${String(o.up1??"-").padStart(5)} ${String(o.pT1??"-").padStart(5)} ${String(o.pStop??"-").padStart(6)} ${String(o.risk??"-").padStart(5)} ${String(o.ev??"-").padStart(6)}  ${o.volRatio}`);
+ `${o.tk.padEnd(5)} ${o.held?"*":" "} ${o.date} ${String(o.last).padStart(7)} ${String(o.chg).padStart(6)} ${String(o.rsi).padStart(5)} ${o.ma} ${String(o.macdH).padStart(7)} ${String(o.support??"-").padStart(7)} ${String(o.stop??"-").padStart(7)} ${String(o.rungs[0]??"-").padStart(7)} ${String(o.up1??"-").padStart(5)} ${String(o.pT1??"-").padStart(5)} ${String(o.pStop??"-").padStart(6)} ${String(o.risk??"-").padStart(5)} ${String(o.ev??"-").padStart(6)} ${String(o.evR??"-").padStart(6)}  ${o.volRatio}`);

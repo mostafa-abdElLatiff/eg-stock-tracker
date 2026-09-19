@@ -11,10 +11,16 @@
 
 import { readFileSync } from "fs";
 import { fairValue } from "./fair-value.mjs";
+import { allFundamentals } from "./lib/fundamentals.mjs";
 
 const ROOT = new URL("../../", import.meta.url).pathname;
 const stored = JSON.parse(readFileSync(`${ROOT}journal/stored-levels.json`, "utf8"));
-const fin = JSON.parse(readFileSync(`${ROOT}journal/financials.json`, "utf8")).data;
+// READS THROUGH THE REGISTRY. Opening journal/financials.json directly here is
+// what made ORAS look absent on 2026-09-19 - four times, twice in one day -
+// while its data sat in journal/oras-financials.json, fetched 2026-09-17 and
+// carrying a gate verdict of PASSES. lib/fundamentals.mjs consults EVERY store;
+// the raw file is only one of them. CLAUDE.md rule 1 and rule 6 both.
+const fin = allFundamentals();
 
 let tickers = process.argv.slice(2).filter((a) => !a.startsWith("--")).map((t) => t.toUpperCase());
 if (!tickers.length) tickers = Object.keys(stored).filter((t) => fin[t] && !t.startsWith("EGX"));

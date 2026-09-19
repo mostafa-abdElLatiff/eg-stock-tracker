@@ -34,6 +34,7 @@
 import { readFileSync, readdirSync, writeFileSync } from "fs";
 import { parseCsv } from "./csv-technicals.mjs";
 import { priceLevels } from "./price-levels.mjs";
+import { pathToFileURL } from "url";
 
 const ROOT = new URL("../../", import.meta.url).pathname;
 
@@ -91,7 +92,12 @@ export function refreshLevels(ticker) {
 }
 
 // ---------------------------------------------------------------- CLI
-const isMain = process.argv[1] && import.meta.url.endsWith(process.argv[1].split("/").pop());
+// Run-directly check. Was `import.meta.url.endsWith(argv[1].split("/").pop())`, which is a
+// SUFFIX match on the basename - so any caller named levels.mjs made
+// price-levels.mjs think it was the entry point and run its CLI, throwing on an
+// empty ticker. Found 2026-09-19 when a scratch script called levels.mjs blew up
+// inside priceLevels(). pathToFileURL comparison is exact.
+const isMain = process.argv[1] && import.meta.url === pathToFileURL(process.argv[1]).href;
 if (isMain) {
   const argStore = process.argv[2] && !process.argv[2].startsWith("--") ? process.argv[2] : `${ROOT}journal/stored-levels.json`;
   const stored = JSON.parse(readFileSync(argStore, "utf8"));
