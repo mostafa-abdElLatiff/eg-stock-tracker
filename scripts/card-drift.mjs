@@ -55,7 +55,16 @@ for(const tk of Object.keys(CARD).filter(x=>!x.startsWith("_"))){
  const rungs=buildLadder(rows,{maxRungs:3}).rungs.map(r=>+r.price.toFixed(2));
  if(Array.isArray(c.targets)&&c.targets.length){
    const hi90=Math.max(...rows.slice(-90).map(r=>r.high));
-   if(c.targets[0]>hi90) D(tk,"target1",c.targets[0],rungs[0]??null,`*** UNREACHABLE: above the 90-day high ${hi90} ***`);
+   // A rung above the 90-day high is a DEFECT only when real resistance exists
+   // below it - then the ladder skipped a level price must trade through.
+   // With nothing overhead (ETEL, TALM at all-time highs) an extension is the
+   // documented fallback, not an error: check-consistency.mjs says so in its
+   // own header, and P3 says the same. Flagging those was a false positive.
+   const overhead=map.levels.filter(l=>l.price>last&&l.strength>=3);
+   if(c.targets[0]>hi90&&overhead.length)
+     D(tk,"target1",c.targets[0],rungs[0]??null,`*** UNREACHABLE: above the 90-day high ${hi90} with real resistance at ${overhead[0].price} ***`);
+   else if(c.targets[0]>hi90)
+     D(tk,"target1",c.targets[0],rungs[0]??null,`extension above the 90-day high ${hi90} - LEGITIMATE, nothing overhead in the window`);
    else if(rungs.length&&!near(c.targets[0],rungs[0],0.005)) D(tk,"target1",c.targets[0],rungs[0],"ladder moved");
  }
  if(c.fundamentalTarget!=null && Array.isArray(c.targets) && c.targets.includes(c.fundamentalTarget))
