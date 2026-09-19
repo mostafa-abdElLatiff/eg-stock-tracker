@@ -26,9 +26,9 @@ import { buildLadder } from "./build-ladder.mjs";
 import { csvFileFor } from "./tickers.mjs";
 import { relativeVolume, VOLUME_WINDOW, sellFractionOnBreak } from "./lib/volume.mjs";
 import { riskFor, gainFor, buyCost, thndrFee } from "./lib/money.mjs";
+import { latestVsPrior } from "./lib/fundamentals.mjs";
 
 const ROOT = new URL("../../", import.meta.url).pathname;
-const FIN = JSON.parse(readFileSync(`${ROOT}journal/financials.json`, "utf8")).data;
 const POS = JSON.parse(readFileSync(`${ROOT}journal/positions.json`, "utf8"));
 
 const HELD = Object.fromEntries(POS.stocks.map((s) => [s.ticker, s]));
@@ -49,28 +49,28 @@ const GROUPS = {
 const v = (value, how) => (value == null ? null : { value: +(+value).toFixed(4), how });
 
 function fundamentals(tk, last) {
-  const d = FIN[tk];
-  if (!d) return { _missing: `no entry for ${tk} in journal/financials.json` };
-  const [rev, ni, gp, oi] = [d.revenue, d.netIncome, d.grossProfit, d.operatingIncome];
-  const pct = (a, b) => ((a - b) / Math.abs(b)) * 100;
-  const nm = (i) => (ni[i] / rev[i]) * 100;
-  const src = `journal/financials.json (stockanalysis.com, ${d.periods[0]} vs ${d.periods[1]})`;
+  // Reads through lib/fundamentals.mjs, which consults EVERY store. Opening
+  // journal/financials.json directly here is what made ORAS look absent on
+  // 2026-09-19 when its data had been sitting in an orphan file for two days.
+  const f = latestVsPrior(tk, last);
+  if (f.status !== "ok") return { _missing: f.next, _checked: f.checked };
+  const src = `${f.store} (${f.periods[0]} vs ${f.periods[1]}, ${f.currency})`;
   return {
-    period: d.periods[0],
-    revenueGrowth: v(pct(rev[0], rev[1]), `(${rev[0]} - ${rev[1]}) / ${rev[1]} from ${src}`),
-    netIncomeGrowth: v(pct(ni[0], ni[1]), `(${ni[0]} - ${ni[1]}) / ${ni[1]} from ${src}`),
-    netMargin: v(nm(0), `netIncome ${ni[0]} / revenue ${rev[0]} from ${src}`),
-    netMarginPrior: v(nm(1), `netIncome ${ni[1]} / revenue ${rev[1]} from ${src}`),
-    marginDeltaPP: v(nm(0) - nm(1), `net margin ${d.periods[0]} minus ${d.periods[1]}, percentage POINTS`),
-    grossMargin: v(gp?.[0] != null ? (gp[0] / rev[0]) * 100 : null, `grossProfit ${gp?.[0]} / revenue ${rev[0]}`),
-    operatingMargin: v(oi?.[0] != null ? (oi[0] / rev[0]) * 100 : null, `operatingIncome ${oi?.[0]} / revenue ${rev[0]}`),
-    roe: v(d.totalEquity?.[0] ? (ni[0] / d.totalEquity[0]) * 100 : null, `netIncome ${ni[0]} / totalEquity ${d.totalEquity?.[0]}`),
-    debtToEquity: v(d.totalEquity?.[0] ? (d.totalDebt[0] / d.totalEquity[0]) * 100 : null, `totalDebt ${d.totalDebt?.[0]} / totalEquity ${d.totalEquity?.[0]}`),
-    netCash: v(d.cashAndST?.[0] != null ? d.cashAndST[0] - d.totalDebt[0] : null, `cashAndST ${d.cashAndST?.[0]} - totalDebt ${d.totalDebt?.[0]}; negative means net debt`),
-    freeCashFlow: v(d.freeCashFlow?.[0], `freeCashFlow ${d.periods[0]} from ${src}, EGP millions`),
-    fcfConversion: v(ni[0] ? (d.freeCashFlow[0] / ni[0]) * 100 : null, `freeCashFlow ${d.freeCashFlow?.[0]} / netIncome ${ni[0]} - below ~60% means profit is not turning into cash`),
-    peRatio: v(d.eps?.[0] ? last / d.eps[0] : null, `price ${last} / EPS ${d.eps?.[0]}`),
-    gate: gateVerdict(pct(rev[0], rev[1]), pct(ni[0], ni[1]), nm(0) - nm(1)),
+    period: f.periods[0], store: f.store, currency: f.currency,
+    revenueGrowth: v(f.revenueGrowth, `latest vs prior comparable period from ${src}`),
+    netIncomeGrowth: v(f.netIncomeGrowth, `latest vs prior comparable period from ${src}`),
+    netMargin: v(f.netMargin, `netIncome / revenue, ${src}`),
+    netMarginPrior: v(f.netMarginPrior, `netIncome / revenue for ${f.periods[1]}`),
+    marginDeltaPP: v(f.marginDeltaPP, "net margin now minus prior, percentage POINTS"),
+    grossMargin: v(f.grossMargin, `grossProfit / revenue, ${src}`),
+    operatingMargin: v(f.operatingMargin, `operatingIncome / revenue, ${src}`),
+    roe: v(f.roe, `netIncome / totalEquity, ${src}`),
+    debtToEquity: v(f.debtToEquity, `totalDebt / totalEquity, ${src}`),
+    netCash: v(f.netCash, "cashAndST - totalDebt; negative means net debt"),
+    freeCashFlow: v(f.freeCashFlow, `freeCashFlow, ${src}`),
+    fcfConversion: v(f.fcfConversion, "freeCashFlow / netIncome - below ~60% means profit is not turning into cash"),
+    peRatio: v(f.peRatio, f.peHow ?? "no EPS available"),
+    gate: gateVerdict(f.revenueGrowth, f.netIncomeGrowth, f.marginDeltaPP),
   };
 }
 
