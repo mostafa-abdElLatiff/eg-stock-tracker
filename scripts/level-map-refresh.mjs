@@ -22,9 +22,12 @@
 //                test, falling back to the nearest unconfirmed one because a
 //                weak ceiling is still where the last sellers were.
 //
-// Everything is computed from the full ~247-bar year in price-history/, never
-// from a short window - see the SCEM/ARCC correction in webapp/CLAUDE.md for
-// what scoring off 21 bars does.
+// Everything is computed from a ~247-bar year of price-history/, never from a
+// short window - see the SCEM/ARCC correction in webapp/CLAUDE.md for what
+// scoring off 21 bars does. The year is enforced by WINDOW_BARS inside
+// priceLevels(), NOT by the CSV happening to be a year long: this comment used
+// to say "the full ~247-bar year" and meant the whole file, which quietly
+// became ten years when the CSVs were backfilled. See price-levels.mjs.
 //
 // Usage: node level-map-refresh.mjs [--json out.json]
 

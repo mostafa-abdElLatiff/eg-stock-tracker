@@ -37,7 +37,32 @@ import { csvFileFor } from "./tickers.mjs";
 
 const ROOT = new URL("../../", import.meta.url).pathname;
 
+// WINDOW_BARS = 247, roughly one trading year, and it is NOT cosmetic.
+//
+// Every caller used to hand this function the whole CSV. That was harmless
+// while update-csvs.mjs wrote ~247-bar files, and level-map-refresh.mjs still
+// carries a comment claiming "the full ~247-bar year". The CSVs have since
+// grown to ~2,429 bars (back to 2016) and nothing noticed, because the damage
+// is silent: it lands entirely on the VOLUME term of `strength`.
+//
+// volPct is a share of total volume in the window, bucketed across the
+// window's full price range. Over ten years ORHD ran 0.92 -> 43.98, so the 60
+// buckets are ~0.72 wide and total volume is an order of magnitude larger;
+// any one level's 3-bucket share collapses and the >=4% / >=8% bonuses stop
+// firing at all. Measured 2026-09-19 over the 25 mapped names, the full-file
+// map under-scored strength on most of them - ORHD's 39.66 scored 3 on a year
+// and 2 on the full file; COMI's 130.43 scored 7 vs 5; EFIH's 23.50 scored 9
+// vs 7. The thresholds were calibrated on a year, so a year is what they must
+// be fed. The POC told the same story: it returned 6.85 for ORHD, a price last
+// seen in 2019.
+//
+// Windowing here rather than at the three call sites (level-map-refresh,
+// audit-orders, the CLI) so the number cannot drift apart between them again.
+export const WINDOW_BARS = 247;
+
 export function priceLevels(rows, opts = {}) {
+  const bars = opts.bars ?? WINDOW_BARS;
+  if (bars && rows.length > bars) rows = rows.slice(-bars);
   const atr = computeATR(rows, 14);
   const last = rows[rows.length - 1].close;
   const tol = atr * (opts.tolATR ?? 0.75);
@@ -113,8 +138,11 @@ if (isMain) {
   const csvArg = process.argv.includes("--csv") ? process.argv[process.argv.indexOf("--csv") + 1] : null;
   // ticker -> file now comes from the ONE registry, tickers.mjs
   const rows = csvArg ? parseCsv(csvArg) : parseCsv(csvFileFor(ticker));
-  const { last, atr, levels, highestVolumePrice } = priceLevels(rows);
-  console.log(`${ticker || csvArg}  close ${last}  ATR ${atr.toFixed(2)} (${(atr / last * 100).toFixed(1)}%)  ${rows.length} bars`);
+  // --bars was documented in the usage line above but never read.
+  const barsArg = process.argv.includes("--bars") ? parseInt(process.argv[process.argv.indexOf("--bars") + 1], 10) : undefined;
+  const { last, atr, levels, highestVolumePrice } = priceLevels(rows, { bars: barsArg });
+  const used = Math.min(rows.length, barsArg ?? WINDOW_BARS);
+  console.log(`${ticker || csvArg}  close ${last}  ATR ${atr.toFixed(2)} (${(atr / last * 100).toFixed(1)}%)  ${used} of ${rows.length} bars`);
   console.log(`Heaviest trading of the year happened around ${highestVolumePrice} - the price most holders have a basis near.\n`);
   console.log("  price    role        away    touches flip  vol%  strength   if it breaks ->");
   for (const l of levels) {
