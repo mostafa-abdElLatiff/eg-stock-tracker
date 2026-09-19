@@ -10,6 +10,7 @@
 
 import { createClient } from "@supabase/supabase-js";
 import { readFileSync } from "fs";
+import { thndrFee as THNDR_FEE } from "./lib/money.mjs";
 
 const supabase = createClient(process.env.SUPABASE_URL, process.env.SUPABASE_SERVICE_ROLE_KEY);
 const ANALYSIS_USER_EMAIL = process.env.ANALYSIS_USER_EMAIL;
@@ -597,7 +598,7 @@ function checkEmptyVolumeSeries(rows) {
 // and wrong for calling it an "exit". A rung below cost is a level, not a
 // target. Thndr fees (3.00 flat + 0.175%) are included, because on a small
 // tranche they are the difference between a thin gain and a loss.
-const THNDR_FEE = (value) => 3.0 + 0.00175 * value;
+// THNDR_FEE now comes from lib/money.mjs - one definition, see its header.
 
 function checkTargetsBelowCost(rows, positions) {
   const issues = [];

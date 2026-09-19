@@ -10,6 +10,7 @@ import { createClient } from "@supabase/supabase-js";
 import { parseCsv, sma, computeMACD, computeATR, rsiWilder } from "./csv-technicals.mjs";
 import { priceLevels } from "./price-levels.mjs";
 import { stopFor } from "./stop-rule.mjs";
+import { relativeVolume } from "./lib/volume.mjs";
 import { buildLadder } from "./build-ladder.mjs";
 import { excursionStats, ladderExpectedValue } from "./target-probability.mjs";
 
@@ -60,7 +61,6 @@ for (const tk of Object.keys(MAP)) {
   const samples = excursionStats(rows,{horizon:20});
   let ev=null;
   if (stop && rungs.length) ev = ladderExpectedValue({samples, entry:last, stop, targets:rungs.map(r=>r.price), sellPcts:[25,30,30]});
-  const vol10 = rows.slice(-10).reduce((a,r)=>a+r.volume,0)/10;
   out.push({tk, held:HELD.has(tk), date:rows.at(-1).date, last, chg:+(((last-prev)/prev)*100).toFixed(2),
     rsi:rsi&&+rsi.toFixed(1), atr:+atr.toFixed(2), ma:(last>ma20?"A":"b")+(last>ma50?"A":"b")+(last>ma200?"A":"b"),
     macdH: macd? +(macd.histogram ?? macd.hist ?? 0).toFixed(3):null,
@@ -68,7 +68,7 @@ for (const tk of Object.keys(MAP)) {
     ev: ev? +(ev.ev*100).toFixed(2):null, risk: ev? +(ev.riskPct*100).toFixed(1):null,
     pT1: ev? Math.round(ev.rungs[0].p*100):null, pStop: ev? Math.round(ev.pStop*100):null,
     up1: ev? +(ev.rungs[0].gain*100).toFixed(1):null,
-    volRatio: +(rows.at(-1).volume/vol10).toFixed(2)});
+    volRatio: (()=>{const v=relativeVolume(rows); return v==null?null:+v.toFixed(2);})()});
 }
 out.sort((a,b)=>(b.ev??-99)-(a.ev??-99));
 console.log("tk    H date        last     chg%   rsi  ma   macdH    sup     stop   T1     +T1%  P(T1) P(stp) risk%  EV%   vol×");

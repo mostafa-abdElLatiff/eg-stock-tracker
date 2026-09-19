@@ -27,7 +27,7 @@ const ROOT = new URL("../../", import.meta.url).pathname;
 
 export const csvPrefix = {
   ABUK:"Abu Qir", ADIB:"Abu Dhabi", AFDI:"Al Ahly Development", AMOC:"Alexandria Mineral Oils",
-  ARCC:"Arabian Cement", CAED:"Cairo Educational", CLHO:"Cleopatra", COMI:"Commercial Int",
+  ARCC:"Arabian Cement", CAED:"Cairo Educational", CIRA:"Cairo Investment", CLHO:"Cleopatra", COMI:"Commercial Int",
   EASB:"Egyptian Arabian Themar", EAST:"Eastern Tobacco", EGAL:"Egypt Aluminium", EEII:"Arab Engineering", EFID:"Edita",
   EFIH:"E-finance", EMFD:"Emaar Misr", ENGC:"Industrial Engineering", ETEL:"Telecom Egypt",
   EXPA:"Export Development", FWRY:"Fawry", GBCO:"GB AUTO", HELI:"Misr El Gadida",
@@ -36,20 +36,20 @@ export const csvPrefix = {
   MFPC:"Misr Fertilizers", MTIE:"MM Group", ORAS:"Orascom Construction", ORHD:"Orascom Hotels",
   ORWE:"Oriental Weavers", PHAR:"EIPICO", PHDC:"Palm Hills", PHTV:"Pyramisa Hotels",
   POUL:"Cairo Poultry", QNBE:"QNB Alahli", RACC:"Raya Contact", RAYA:"Raya Holding",
-  SCEM:"Sinai Cement", TALM:"Taaleem", TAQA:"TAQA", TMGH:"T M G",
+  SCEM:"Sinai Cement", SHARIAH:"EGX 33 Shariah", TALM:"Taaleem", TAQA:"TAQA", TMGH:"T M G",
 };
 
 export const company = {
   ABUK:"Abu Qir Fertilizers", ADIB:"Abu Dhabi Islamic Bank Egypt", AMOC:"Alexandria Mineral Oils",
   ARCC:"Arabian Cement", CLHO:"Cleopatra Hospital", COMI:"Commercial International Bank Egypt",
-  EAST:"Eastern Tobacco", EFID:"Edita Food", EFIH:"e-finance Egypt", EGAL:"Egypt Aluminium",
+  CIRA:"Cairo Investment and Development", EAST:"Eastern Tobacco", EFID:"Edita Food", EFIH:"e-finance Egypt", EGAL:"Egypt Aluminium",
   ENGC:"Industrial Engineering Company",
   ETEL:"Telecom Egypt", EXPA:"Export Development Bank Egypt", FWRY:"Fawry", GBCO:"GB Auto",
   HRHO:"EFG Hermes", ISPH:"Ibnsina Pharma", JUFO:"Juhayna Food", MASR:"Madinet Masr",
   MCQE:"Misr Cement Qena", MFPC:"MOPCO Misr Fertilizers", ORAS:"Orascom Construction",
   ORHD:"Orascom Development", ORWE:"Oriental Weavers", PHAR:"EIPICO", PHDC:"Palm Hills Developments",
   PHTV:"Pyramisa Hotels", POUL:"Cairo Poultry", QNBE:"QNB Alahli", RACC:"Raya Contact Center",
-  RAYA:"Raya Holding", SCEM:"Sinai Cement", TALM:"Taaleem Management Services", TAQA:"TAQA Arabia",
+  RAYA:"Raya Holding", SCEM:"Sinai Cement", SHARIAH:"EGX 33 Shariah Index", TALM:"Taaleem Management Services", TAQA:"TAQA Arabia",
   TMGH:"Talaat Moustafa Group",
 };
 

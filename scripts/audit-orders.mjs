@@ -30,6 +30,7 @@ import { readFileSync, readdirSync } from "fs";
 import { parseCsv } from "./csv-technicals.mjs";
 import { priceLevels } from "./price-levels.mjs";
 import { stopFor } from "./stop-rule.mjs";
+import { thndrFee as FEE } from "./lib/money.mjs";
 
 const ROOT = new URL("../../", import.meta.url).pathname;
 const FILE = {
@@ -40,7 +41,7 @@ const FILE = {
   ISPH: "Ibnsina", JUFO: "Juhayna", MFPC: "Misr Fertilizers", QNBE: "QNB Alahli",
   TAQA: "TAQA", SCEM: "Sinai Cement", ARCC: "Arabian Cement", ORWE: "Oriental Weavers",
 };
-const FEE = (v) => 3.0 + v * 0.00175;
+// FEE now comes from lib/money.mjs - see its header for why it may not be re-derived.
 
 const pos = JSON.parse(readFileSync(`${ROOT}journal/positions.json`, "utf8"));
 const files = readdirSync(`${ROOT}price-history`);
