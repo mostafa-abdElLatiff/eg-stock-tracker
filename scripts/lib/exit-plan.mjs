@@ -39,6 +39,8 @@
 // caveat, same as L-26: 2016-2026 on the EGX is one long devaluation bull
 // market, which punishes systematic selling almost by construction.
 
+import { sellFractionOnBreak } from "./volume.mjs";
+
 /**
  * Default sell sizing by rung count. A CONVENTION, not a measured result -
  * unlike sellFractionOnBreak() in ./volume.mjs, which is graded by volume and
@@ -49,10 +51,11 @@
 const PCT_BY_COUNT = { 1: [70], 2: [35, 50], 3: [25, 30, 30], 4: [20, 20, 25, 20] };
 
 /**
- * @param {{targets?:number[], sellPcts?:number[], stop?:number|null}} data card fields
- * @returns {Array<{price:number, sellPct:number, stopAfter:number|null, stopNote:string}>}
+ * @param {{targets?:number[], sellPcts?:number[], stop?:number|null, entry?:number|null}} data
+ * @param {{rows?:Array}} [opts] pass `rows` to size rung 1 by MEASURED volume
+ * @returns {Array<{price, sellPct, stopAfter, stopNote, sizing, rMultiple}>}
  */
-export function exitPlan(data) {
+export function exitPlan(data, opts = {}) {
   const targets = data?.targets || [];
   const n = targets.length;
   if (!n) return [];
@@ -61,9 +64,21 @@ export function exitPlan(data) {
   // 15% moved to the trailing remainder rather than target 2.
   const pcts = data.sellPcts || PCT_BY_COUNT[n] || targets.map(() => Math.round(100 / n));
   const stop = data.stop ?? null;
+  // Rung 1 prefers the MEASURED rule over the convention. sellFractionOnBreak()
+  // is graded by the volume the level broke on and was measured over 780 breaks
+  // (L-27); PCT_BY_COUNT is a convention with no evidence behind it. Two sell-
+  // sizing rules existed side by side until 2026-09-20 - this is which one wins.
+  const graded = opts.rows ? sellFractionOnBreak(opts.rows) : null;
+  // R-multiple: how far each rung sits in units of the INITIAL RISK. The
+  // professional framing (FOREX.com, Metriclan) sizes targets as 1R/2R/3R
+  // rather than as raw prices, because a rung under 1R cannot pay for the stop.
+  const entry = data.entry ?? null;
+  const R = entry && stop && stop < entry ? entry - stop : null;
   return targets.map((price, i) => ({
     price,
-    sellPct: pcts[i],
+    sellPct: i === 0 && graded ? Math.round(graded.fraction * 100) : pcts[i],
+    sizing: i === 0 && graded ? `measured: ${graded.label} (${graded.ratio?.toFixed(2)}x volume)` : "convention by rung count",
+    rMultiple: R ? +((price - entry) / R).toFixed(2) : null,
     stopAfter: stop,
     stopNote: i === 0
       ? "Stop unchanged. Moving it to breakeven here was measured as the worst of six policies - 82.2% stopped out, 17.8% positive."
