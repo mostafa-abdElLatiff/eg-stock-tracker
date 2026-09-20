@@ -39,11 +39,21 @@ const ORDERS = Object.fromEntries(POS.openBuyOrders.map((o) => [o.ticker, o]));
 // because positions.json is a record of what IS, not what is proposed.
 const PLANNED = { ENGC: { price: 39.73, units: 164 }, EXPA: { price: 15.16, units: 0 } };
 
+// HELD AND ORDER ARE DERIVED, NEVER LISTED. They were hardcoded here until
+// 2026-09-20, which made this file a SECOND record of what is owned - and on
+// that date it was wrong in three ways at once: ETEL had been sold that
+// morning and was still listed, while EFIH (292 units) and MASR (400) were
+// live positions the analysis skipped entirely. A position the P1 analysis
+// cannot see gets no stop check, no gate and no card.
+//
+// positions.json is the single record of what IS. Read it.
 const GROUPS = {
-  held: ["ORHD", "ETEL", "TMGH", "ADIB", "RAYA", "EFID", "ORAS"],
-  order: ["TAQA", "EFIH", "FWRY", "COMI", "ABUK"],
-  planned: ["ENGC", "EXPA"],
-  opportunity: ["POUL", "EEII", "MTIE", "ISPH", "GBCO", "ARCC"],
+  held: POS.stocks.map((s) => s.ticker),
+  order: POS.openBuyOrders.map((o) => o.ticker).filter((t) => !HELD[t]),
+  planned: Object.keys(PLANNED),
+  // Watch-only names. This one IS a list because nothing else records it -
+  // they are not owned and no order rests on them.
+  opportunity: ["POUL", "EEII", "MTIE", "ISPH", "GBCO", "ARCC", "SCEM", "MCQE"],
 };
 
 /** A number plus how it was obtained. The whole point of this file. */
