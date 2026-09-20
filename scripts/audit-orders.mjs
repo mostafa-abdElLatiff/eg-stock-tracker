@@ -32,6 +32,7 @@ import { priceLevels } from "./price-levels.mjs";
 import { stopFor } from "./stop-rule.mjs";
 import { stopAllowed } from "./lib/corporate-actions.mjs";
 import { thndrFee as FEE } from "./lib/money.mjs";
+import { latestDecision } from "./lib/decision-log.mjs";
 
 const ROOT = new URL("../../", import.meta.url).pathname;
 const FILE = {
@@ -154,3 +155,42 @@ for (const r of out) {
 const edits = out.flatMap((r) => (r.orders ?? []).filter((o) => o.verdict === "EDIT").map((o) => `${r.ticker} ${o.kind}`));
 console.log(`${edits.length} order(s) would change: ${edits.join(", ") || "none"}`);
 console.log(`Everything else is already sitting where the level map says it should.`);
+
+// ---------------------------------------------------------------------------
+// BROKER STATE vs RECOMMENDED STATE. L-39.
+//
+// positions.json.openBuyOrders records what is sitting AT THNDR, captured from
+// a dated screen. The decision log records what was last RECOMMENDED. These are
+// different things and conflating them cost a real error: the 2026-09-19 brief
+// amended four orders upward, the sizes were never written to the log, and the
+// 09-20 list read the 09-17 broker screens and quoted the OLD counts as if no
+// amend existed.
+//
+// A disagreement is never nothing. It is either a proposal Mostafa has not
+// acted on, or a fill/edit nobody recorded - and both need saying out loud.
+// Silence here is what made the two look identical.
+const asOf = pos._openBuyOrdersNote ?? "(no capture note)";
+const mismatches = [];
+for (const o of pos.openBuyOrders ?? []) {
+  const price = latestDecision(o.ticker, "buyLimit");
+  const units = latestDecision(o.ticker, "buyLimitUnits");
+  const say = (field, placed, d) => {
+    if (!d) return;
+    const want = d.to;
+    const same = want === null ? false : Number(want) === Number(placed);
+    if (want === null) {
+      mismatches.push(`${o.ticker.padEnd(5)} ${field}: placed ${placed}, but the last decision (${d.at.slice(0, 10)}, ${d.status}) CANCELS this order.`);
+    } else if (!same) {
+      mismatches.push(`${o.ticker.padEnd(5)} ${field}: placed ${placed}, last decision says ${want} (${d.at.slice(0, 10)}, ${d.status}).`);
+    }
+  };
+  say("price", o.price, price);
+  say("units", o.units, units);
+}
+console.log(`\nBROKER vs DECISION LOG   broker state ${asOf}`);
+if (!mismatches.length) {
+  console.log(`  All ${(pos.openBuyOrders ?? []).length} resting order(s) match the latest logged decision.`);
+} else {
+  for (const m of mismatches) console.log(`  ! ${m}`);
+  console.log(`  ${mismatches.length} disagreement(s). Each is either an unactioned proposal or an unrecorded change - resolve before quoting any size.`);
+}
