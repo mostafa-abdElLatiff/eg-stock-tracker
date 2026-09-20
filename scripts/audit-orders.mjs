@@ -29,10 +29,12 @@
 import { readFileSync, readdirSync } from "fs";
 import { parseCsv } from "./csv-technicals.mjs";
 import { priceLevels } from "./price-levels.mjs";
-import { stopFor } from "./stop-rule.mjs";
+import { stopFor, anchorClearance } from "./stop-rule.mjs";
 import { stopAllowed } from "./lib/corporate-actions.mjs";
 import { thndrFee as FEE } from "./lib/money.mjs";
 import { latestDecision } from "./lib/decision-log.mjs";
+import { csvFileFor } from "./tickers.mjs";
+import { computeATR } from "./csv-technicals.mjs";
 
 const ROOT = new URL("../../", import.meta.url).pathname;
 const FILE = {
@@ -169,6 +171,32 @@ console.log(`Everything else is already sitting where the level map says it shou
 // A disagreement is never nothing. It is either a proposal Mostafa has not
 // acted on, or a fill/edit nobody recorded - and both need saying out loud.
 // Silence here is what made the two look identical.
+// ANCHOR CLEARANCE on every resting BUY. A stop is only as good as the level it
+// is anchored to, and a level is only support while price is above it. EFIH was
+// entered 0.08 ATR above its anchor on 2026-09-19 and lost it the next session -
+// the odds-on outcome at that clearance, not bad luck. See stop-rule.mjs.
+// The level map is computed HERE rather than looked up in `out`, which only
+// holds HELD positions - the first version of this check read `out` and
+// therefore skipped every order-only ticker and reported all-clear. A check
+// that cannot fail is worse than no check.
+const fragile = [];
+const checked = [];
+for (const o of pos.openBuyOrders ?? []) {
+  let rows;
+  try { rows = parseCsv(csvFileFor(o.ticker)); } catch { fragile.push(`${o.ticker}: no CSV - NOT CHECKED`); continue; }
+  const atr = computeATR(rows, 14);
+  const anchorLvl = priceLevels(rows).levels
+    .filter((l) => l.price < o.price && l.strength >= 5)
+    .sort((a, b) => b.price - a.price)[0];
+  if (!anchorLvl) { fragile.push(`${o.ticker.padEnd(5)} NO strength-5 anchor below ${o.price} - the stop would sit in a void`); continue; }
+  const c = anchorClearance(o.price, anchorLvl.price, atr);
+  checked.push(o.ticker);
+  if (c.verdict !== "ok") fragile.push(`${o.ticker.padEnd(5)} ${c.verdict.toUpperCase()}: ${c.why}`);
+}
+console.log(`\nANCHOR CLEARANCE on resting buys`);
+if (!fragile.length) console.log(`  All ${checked.length} resting buy(s) clear their anchor by at least 1 ATR: ${checked.join(", ")}`);
+else { for (const f of fragile) console.log(`  ! ${f}`); console.log(`  A tight stop that hugs its level is not a safe stop - it is a stop that gets hit.`); }
+
 const asOf = pos._openBuyOrdersNote ?? "(no capture note)";
 const mismatches = [];
 for (const o of pos.openBuyOrders ?? []) {

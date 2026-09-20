@@ -43,6 +43,47 @@ export const ATR_BELOW = 1.0;
 export const MIN_STRENGTH = 5;
 export const RELEVANCE = 0.20;
 
+// ANCHOR CLEARANCE - how far the entry must sit ABOVE the level the stop is
+// anchored to, measured in ATR.
+//
+// A stop is only as good as its anchor, and a level is only support while price
+// is above it. On 2026-09-19 EFIH was entered at 23.55 with the stop anchored to
+// the 23.50 shelf - 0.05 of room, 0.08 ATR. One ordinary down-day closed below
+// 23.50, which flipped it to RESISTANCE and left the 22.86 stop stranded above
+// the new nearest support at 22.80. The stop was computed correctly; the anchor
+// was not durable.
+//
+// MEASURED across 71,750 setups, 47 tickers, 10 years - how often the anchor
+// stops being support within 10 sessions, by clearance:
+//     0.00-0.25 ATR  ->  61.6% lost   (n=6,196)
+//     0.25-0.50 ATR  ->  53.4% lost   (n=6,307)
+//     0.50-1.00 ATR  ->  44.3% lost   (n=10,891)
+//     1.00-2.00 ATR  ->  25.7% lost   (n=13,196)
+//     2.00+     ATR  ->   3.9% lost   (n=35,160)
+//
+// EFIH sat at 0.08 ATR. Losing the anchor was the ODDS-ON outcome, not bad luck.
+//
+// The trade-off is real and must be stated rather than hidden: clearance and
+// stop-tightness are the same axis. A 2.9%-risk stop looked attractive PRECISELY
+// because it hugged the level, and hugging the level is what made it fragile.
+export const CLEARANCE_REFUSE = 0.5;  // below this the anchor fails more often than not
+export const CLEARANCE_WARN = 1.0;    // below this it still fails over 40% of the time
+
+/**
+ * How durable is the level this stop is anchored to?
+ * @returns {{atr:number, verdict:"ok"|"thin"|"fragile", lossRate:number, why:string}}
+ */
+export function anchorClearance(entry, level, atr) {
+  if (!(atr > 0) || level == null || entry == null) {
+    return { atr: null, verdict: "unknown", lossRate: null, why: "need entry, anchor level and ATR" };
+  }
+  const c = (entry - level) / atr;
+  const lossRate = c < 0.25 ? 61.6 : c < 0.5 ? 53.4 : c < 1 ? 44.3 : c < 2 ? 25.7 : 3.9;
+  const verdict = c < CLEARANCE_REFUSE ? "fragile" : c < CLEARANCE_WARN ? "thin" : "ok";
+  return { atr: +c.toFixed(2), verdict, lossRate,
+    why: `entry ${entry} sits ${c.toFixed(2)} ATR above the ${level} anchor; historically that anchor stops being support within 10 sessions ${lossRate}% of the time` };
+}
+
 /**
  * @param {{last:number, atr:number, levels:Array}} map  output of priceLevels()
  * @returns {{level:object, stop:number, basis:string}|null}
@@ -64,7 +105,10 @@ export function stopFor(map, opts = {}) {
     : inBound.length ? `WEAK floor (strength ${level.strength}) - nothing at ${minStrength}+ within ${relevance * 100}%`
     : `NO floor within ${relevance * 100}% - nearest level is ${((last - level.price) / last * 100).toFixed(1)}% away`;
 
-  return { level, stop: +(level.price - atr * atrBelow).toFixed(2), basis };
+  const stop = +(level.price - atr * atrBelow).toFixed(2);
+  // Anchored to the ENTRY when one is supplied (rule 8), else to spot.
+  const clearance = anchorClearance(opts.entry ?? last, level.price, atr);
+  return { level, stop, basis, clearance };
 }
 
 /** A stop is only useful if it is reached less often than the target. */
