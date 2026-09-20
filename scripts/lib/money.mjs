@@ -32,6 +32,15 @@
 //   flat 3.00 = Brokerage Order Fees 2.00 + FRA Services 1.00
 //   0.175%    = EGX 0.01 + MCDR 0.01 + Risk Insurance 0.005
 //                + Trading Damgha 0.05 + Brokerage & Custody 0.10
+// THNDR'S REPORTED AVERAGE COST ALREADY INCLUDES THE FEE. Verified 2026-09-20
+// against two fills on the same day:
+//   MASR  400 x 7.74  = 3,096.00 + 8.42  = 3,104.42  /400 = 7.7610 -> app shows 7.76
+//   EFIH  292 x 23.55 = 6,876.60 + 15.03 = 6,891.63  /292 = 23.6015 -> app shows 23.60
+// So a difference between the limit you placed and the average the app reports is
+// the FEE, not a worse fill and not a second order. Anchor a stop to the LIMIT
+// (rule 8); quote the reported average only as book cost. Reading the two as
+// separate orders is what invented a phantom MASR position on 2026-09-20.
+
 export const FEE_FLAT = 3.0;
 export const FEE_RATE = 0.00175;
 
